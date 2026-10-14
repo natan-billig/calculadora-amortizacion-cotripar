@@ -6,7 +6,7 @@ import { formatUSD } from './calculatorEngine';
 export interface CartaOfertaPayload {
   numeroOferta: string; // Ej: OF-2026-1042
   fechaEmision: string; // Ej: 14 de Octubre de 2026
-  validezOferta: string; // Ej: 15 días calendario
+  validezOferta: string; // Ej: 20 días calendario
   clienteNombre: string;
   clienteRuc: string;
   vendedorNombre: string;
@@ -70,6 +70,47 @@ async function getLogoBase64(): Promise<LogoData | null> {
   return null;
 }
 
+export function calculateExpirationDate(fechaEmisionStr?: string, daysToAdd: number = 20): string {
+  let baseDate = new Date();
+  if (fechaEmisionStr) {
+    const match = fechaEmisionStr.match(/(\d{1,2})\s+de\s+([A-Za-z]+)\s+de\s+(\d{4})/i);
+    if (match) {
+      const day = parseInt(match[1], 10);
+      const monthName = match[2].toLowerCase();
+      const year = parseInt(match[3], 10);
+      const mesesMap: Record<string, number> = {
+        enero: 0,
+        febrero: 1,
+        marzo: 2,
+        abril: 3,
+        mayo: 4,
+        junio: 5,
+        julio: 6,
+        agosto: 7,
+        setiembre: 8,
+        septiembre: 8,
+        octubre: 9,
+        noviembre: 10,
+        diciembre: 11
+      };
+      if (mesesMap[monthName] !== undefined) {
+        baseDate = new Date(year, mesesMap[monthName], day);
+      }
+    } else {
+      const parsed = new Date(fechaEmisionStr);
+      if (!isNaN(parsed.getTime())) {
+        baseDate = parsed;
+      }
+    }
+  }
+
+  const expDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + daysToAdd);
+  const dd = String(expDate.getDate()).padStart(2, '0');
+  const mm = String(expDate.getMonth() + 1).padStart(2, '0');
+  const yyyy = expDate.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
 export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<jsPDF> {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -117,6 +158,10 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.text('División de Maquinarias e Implementos Agrícolas', textStartX, 16);
   doc.text('RUC: 80019076-9 • Paraguay', textStartX, 20.5);
 
+  // Cálculo de Fecha de Vencimiento (+20 días)
+  const fechaVencimiento = calculateExpirationDate(data.fechaEmision, 20);
+  const validezCompletaTexto = `20 días calendario (Vence el: ${fechaVencimiento})`;
+
   // Quadro de Identificação da Oferta (Direita)
   const rightColX = pageWidth - marginX;
   doc.setFont('helvetica', 'bold');
@@ -124,13 +169,14 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.text('CARTA DE OFERTA COMERCIAL', rightColX, 9.5, { align: 'right' });
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.text(`OFERTA Nº: ${data.numeroOferta}`, rightColX, 14, { align: 'right' });
+  doc.setFontSize(7.8);
+  doc.text(`OFERTA Nº: ${data.numeroOferta}`, rightColX, 13.8, { align: 'right' });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.text(`Fecha: ${data.fechaEmision}`, rightColX, 18, { align: 'right' });
-  doc.text(`Validez: ${data.validezOferta || '15 días calendario'}`, rightColX, 22, { align: 'right' });
+  doc.setFontSize(6.8);
+  doc.text(`Fecha: ${data.fechaEmision}`, rightColX, 17.6, { align: 'right' });
+  doc.setFont('helvetica', 'bold');
+  doc.text(`VALIDEZ DE LA OFERTA: ${validezCompletaTexto}`, rightColX, 21.6, { align: 'right' });
 
   let currentY = 32;
 
@@ -355,9 +401,11 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
 
   // 5. SEÇÃO 2 — CONDICIONES COMERCIALES, FINANCIACIÓN Y GARANTÍA (Grid 2x2)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   doc.setTextColor(200, 16, 46);
   doc.text('2. CONDICIONES COMERCIALES, FINANCIACIÓN Y GARANTÍA', marginX, currentY);
+  doc.setFontSize(6.8);
+  doc.text(`VALIDEZ DE LA OFERTA: ${validezCompletaTexto}`, pageWidth - marginX, currentY, { align: 'right' });
 
   currentY += 3.5;
 
@@ -413,21 +461,22 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.2);
   doc.setTextColor(200, 16, 46);
-  doc.text('Plazo y Condiciones de Entrega', boxBX + 3.5, currentY + 4.5);
+  doc.text('Validez, Plazo y Condiciones de Entrega', boxBX + 3.5, currentY + 4.5);
 
-  doc.setFontSize(6.5);
+  doc.setFontSize(6.2);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
   const entLines = [
+    `• Validez: 20 días calendario (Vence el: ${fechaVencimiento}).`,
     `• Entrega sujeta a aprobación crediticia y desembolso por parte de la entidad bancaria (${data.bancoEntidad || 'el Banco'}).`,
     '• Lugar de entrega: Puesto en estancia / establecimiento del cliente según acuerdo comercial.',
     '• Disponibilidad: Inmediata según inventario en casa central o sucursales de Cotripar S.A.'
   ];
-  let entY = currentY + 9;
+  let entY = currentY + 8.5;
   entLines.forEach((l) => {
     const split = doc.splitTextToSize(l, boxW - 6);
     doc.text(split, boxBX + 3.5, entY);
-    entY += split.length * 3.4 + 1.2;
+    entY += split.length * 3.2 + 1;
   });
 
   currentY += boxAHeight + 3.5;
@@ -502,7 +551,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
     { align: 'center' }
   );
 
-  currentY += 14;
+  currentY += 11;
 
   // Linha de Assinatura Centralizada
   const sigLineWidth = 75;
@@ -511,7 +560,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setLineWidth(0.3);
   doc.line(sigLineX, currentY, sigLineX + sigLineWidth, currentY);
 
-  currentY += 4;
+  currentY += 3.8;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(15, 23, 42);
@@ -524,9 +573,20 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.text('División Comercial • Cotripar S.A.', pageWidth / 2, currentY, { align: 'center' });
   doc.text('RUC: 80019076-9 • Paraguay', pageWidth / 2, currentY + 3.2, { align: 'center' });
 
-  // 7. AVISO LEGAL DE RODAPÉ (UMA ÚNICA PÁGINA PERFEITA)
+  // 7. AVISO LEGAL Y VALIDEZ EN RODAPÉ (UMA ÚNICA PÁGINA PERFEITA)
   const footerY = pageHeight - 8;
-  doc.setFontSize(6);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.3);
+  doc.setTextColor(153, 27, 27);
+  doc.text(
+    'La presente oferta comercial tiene una validez de 20 (veinte) días calendario a partir de su fecha de emisión.',
+    pageWidth / 2,
+    footerY - 3.4,
+    { align: 'center' }
+  );
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(5.8);
   doc.setTextColor(148, 163, 184);
   doc.text(
     `Nota: Los valores de financiación bancaria son referenciales y sujetos a la liquidación definitiva de la entidad bancaria. • Sistema Cotripar SAC ${APP_VERSION}`,

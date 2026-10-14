@@ -61,7 +61,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   const [isGeneratingOffer, setIsGeneratingOffer] = useState<boolean>(false);
   const [offerFormData, setOfferFormData] = useState({
     numeroOferta: '',
-    validezOferta: '15 días calendario',
+    validezOferta: '20 días calendario',
     clienteNombre: '',
     clienteRuc: '',
     vendedorNombre: '',
@@ -410,7 +410,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     setOfferModalSim(sim);
     setOfferFormData({
       numeroOferta: autoNum,
-      validezOferta: '15 días calendario',
+      validezOferta: '20 días calendario',
       clienteNombre: sim.cliente_nombre || '',
       clienteRuc: sim.cliente_ruc || '',
       vendedorNombre: sim.vendedor_nombre || currentUser?.nombre || 'Asesor Comercial Cotripar',
@@ -497,7 +497,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       const payload: CartaOfertaPayload = {
         numeroOferta: offerFormData.numeroOferta || `OF-${dateObj.getFullYear()}-001`,
         fechaEmision,
-        validezOferta: offerFormData.validezOferta || '15 días calendario',
+        validezOferta: offerFormData.validezOferta || '20 días calendario',
         clienteNombre: offerFormData.clienteNombre || offerModalSim.cliente_nombre,
         clienteRuc: offerFormData.clienteRuc || offerModalSim.cliente_ruc || '',
         vendedorNombre: offerFormData.vendedorNombre || offerModalSim.vendedor_nombre,
