@@ -37,9 +37,8 @@ interface LogoData {
   ratio: number;
 }
 
-async function getLogoBase64(): Promise<LogoData | null> {
-  const candidates = ['/logo_branco.png', '/logo.png'];
-  for (const path of candidates) {
+async function getImageBase64(paths: string[], defaultRatio: number = 3.455): Promise<LogoData | null> {
+  for (const path of paths) {
     try {
       const res = await fetch(path);
       if (!res.ok) continue;
@@ -55,10 +54,10 @@ async function getLogoBase64(): Promise<LogoData | null> {
       const ratio = await new Promise<number>((resolve) => {
         const img = new Image();
         img.onload = () => {
-          const r = img.width > 0 && img.height > 0 ? img.width / img.height : 2.754;
+          const r = img.width > 0 && img.height > 0 ? img.width / img.height : defaultRatio;
           resolve(r);
         };
-        img.onerror = () => resolve(2.754);
+        img.onerror = () => resolve(defaultRatio);
         img.src = base64;
       });
 
@@ -126,59 +125,84 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   // 1. CABEÇALHO INSTITUCIONAL SUPERIOR (TOPO DA PÁGINA A4)
   // Faixa Superior Vermelha Cotripar (#C8102E -> RGB: 200, 16, 46)
   doc.setFillColor(200, 16, 46);
-  doc.rect(0, 0, pageWidth, 26, 'F');
+  doc.rect(0, 0, pageWidth, 35, 'F');
 
   // Faixa de Acento Vermelho Escuro (#991B1B -> RGB: 153, 27, 27)
   doc.setFillColor(153, 27, 27);
-  doc.rect(0, 26, pageWidth, 1.5, 'F');
+  doc.rect(0, 35, pageWidth, 1.5, 'F');
 
-  // Logotipo Oficial
-  const logoData = await getLogoBase64();
-  let textStartX = marginX;
-  if (logoData) {
+  // Carregar logotipos em paralelo
+  const [logoTopo, logoMarcas] = await Promise.all([
+    getImageBase64(['/logo_branco_topo.png', '/logo_topo.png', '/logo_branco.png'], 3.455),
+    getImageBase64(['/logo_branco_marcas.png', '/logo_marcas.png'], 18.688)
+  ]);
+
+  // ZONA SUPERIOR DO CABEÇALHO (y = 4.5mm a 23mm)
+  const leftX = marginX;
+  if (logoTopo) {
     try {
-      const targetHeight = 11;
-      const targetWidth = Math.min(34, targetHeight * (logoData.ratio || 2.754));
-      doc.addImage(logoData.base64, 'PNG', marginX, 7.5, targetWidth, targetHeight);
-      textStartX = marginX + targetWidth + 5;
-      if (textStartX < 52) textStartX = 52;
+      const targetWidth = 48;
+      const targetHeight = targetWidth / (logoTopo.ratio || 3.455);
+      doc.addImage(logoTopo.base64, 'PNG', leftX, 4.5, targetWidth, targetHeight);
     } catch {
-      textStartX = marginX;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(255, 255, 255);
+      doc.text('GRUPO COTRIPAR', leftX, 12);
     }
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(255, 255, 255);
+    doc.text('GRUPO COTRIPAR', leftX, 12);
   }
 
-  // Título e Subtítulo Institucional (Esquerda)
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12.5);
-  doc.text('COTRIPAR S.A.', textStartX, 11);
-
+  // Subtítulo Institucional limpo abaixo da logo
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.text('División de Maquinarias e Implementos Agrícolas', textStartX, 16);
-  doc.text('RUC: 80019076-9 • Paraguay', textStartX, 20.5);
+  doc.setFontSize(7.0);
+  doc.setTextColor(254, 226, 226); // Rosado claro / branco suave
+  doc.text('División de Maquinarias e Implementos Agrícolas • RUC: 80019076-9 • Paraguay', leftX, 22.5);
 
   // Cálculo de Fecha de Vencimiento (+20 días)
   const fechaVencimiento = calculateExpirationDate(data.fechaEmision, 20);
-  const validezCompletaTexto = `20 días calendario (Vence el: ${fechaVencimiento})`;
 
   // Quadro de Identificação da Oferta (Direita)
   const rightColX = pageWidth - marginX;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.text('CARTA DE OFERTA COMERCIAL', rightColX, 9.5, { align: 'right' });
+  doc.setTextColor(255, 255, 255);
+  doc.text('CARTA DE OFERTA COMERCIAL', rightColX, 8.5, { align: 'right' });
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.8);
-  doc.text(`OFERTA Nº: ${data.numeroOferta}`, rightColX, 13.8, { align: 'right' });
+  doc.setFontSize(8.0);
+  doc.text(`OFERTA Nº: ${data.numeroOferta}`, rightColX, 13.0, { align: 'right' });
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.8);
-  doc.text(`Fecha: ${data.fechaEmision}`, rightColX, 17.6, { align: 'right' });
+  doc.text(`FECHA: ${data.fechaEmision}`, rightColX, 17.0, { align: 'right' });
   doc.setFont('helvetica', 'bold');
-  doc.text(`VALIDEZ DE LA OFERTA: ${validezCompletaTexto}`, rightColX, 21.6, { align: 'right' });
+  doc.text(`VALIDEZ: 20 días calendario (Vence: ${fechaVencimiento})`, rightColX, 21.0, { align: 'right' });
 
-  let currentY = 32;
+  // ZONA INFERIOR DO CABEÇALHO — FAIXA DE MARCAS OFICIAIS (y = 24.5mm a 34.5mm)
+  doc.setDrawColor(220, 38, 38);
+  doc.setLineWidth(0.2);
+  doc.line(marginX, 24.5, pageWidth - marginX, 24.5);
+
+  if (logoMarcas) {
+    try {
+      const marcasWidth = 160;
+      const marcasHeight = marcasWidth / (logoMarcas.ratio || 18.688);
+      const marcasX = (pageWidth - marcasWidth) / 2;
+      doc.addImage(logoMarcas.base64, 'PNG', marcasX, 25.5, marcasWidth, marcasHeight);
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Reset text color to dark slate
+  doc.setTextColor(30, 41, 59);
+
+  let currentY = 40;
 
   // 2. QUADRO DE DADOS DO CLIENTE E BANCO DESTINATÁRIO
   const clientBoxHeight = 24;
@@ -200,7 +224,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.text('CLIENTE / SOLICITANTE:', cLeftX, currentY + 6);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  const clienteTxt = data.clienteNombre.length > 30 ? data.clienteNombre.substring(0, 28) + '...' : data.clienteNombre;
+  const clienteTxt = data.clienteNombre.length > 45 ? data.clienteNombre.substring(0, 42) + '...' : data.clienteNombre;
   doc.text(clienteTxt, cLeftValX, currentY + 6);
 
   doc.setFont('helvetica', 'normal');
@@ -219,8 +243,8 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
     doc.text(extraLabel, cLeftX, currentY + 17);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(15, 23, 42);
-    const extraTxt = extraVal.length > 30 ? extraVal.substring(0, 28) + '...' : extraVal;
-    doc.text(extraTxt, cLeftValX, currentY + 17);
+    // Exibir texto completo sem truncar com reticências
+    doc.text(extraVal, cLeftValX, currentY + 17);
   }
 
   // Coluna Direita: Dados da Entidade Financeira
@@ -339,13 +363,12 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       fontSize: 7.2,
-      halign: 'left',
       cellPadding: 2.0
     },
     columnStyles: {
-      0: { cellWidth: 12, halign: 'center' },
-      1: { cellWidth: 96 },
-      2: { cellWidth: 14, halign: 'center' },
+      0: { cellWidth: 14, halign: 'center' },
+      1: { cellWidth: 92, halign: 'left' },
+      2: { cellWidth: 16, halign: 'center' },
       3: { cellWidth: 30, halign: 'right' },
       4: { cellWidth: 30, halign: 'right' }
     },
@@ -401,11 +424,9 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
 
   // 5. SEÇÃO 2 — CONDICIONES COMERCIALES, FINANCIACIÓN Y GARANTÍA (Grid 2x2)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(8.5);
   doc.setTextColor(200, 16, 46);
   doc.text('2. CONDICIONES COMERCIALES, FINANCIACIÓN Y GARANTÍA', marginX, currentY);
-  doc.setFontSize(6.8);
-  doc.text(`VALIDEZ DE LA OFERTA: ${validezCompletaTexto}`, pageWidth - marginX, currentY, { align: 'right' });
 
   currentY += 3.5;
 
@@ -467,7 +488,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
   const entLines = [
-    `• Validez: 20 días calendario (Vence el: ${fechaVencimiento}).`,
+    `• Validez: 20 días calendario (Vence: ${fechaVencimiento}).`,
     `• Entrega sujeta a aprobación crediticia y desembolso por parte de la entidad bancaria (${data.bancoEntidad || 'el Banco'}).`,
     '• Lugar de entrega: Puesto en estancia / establecimiento del cliente según acuerdo comercial.',
     '• Disponibilidad: Inmediata según inventario en casa central o sucursales de Cotripar S.A.'
@@ -573,20 +594,10 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.text('División Comercial • Cotripar S.A.', pageWidth / 2, currentY, { align: 'center' });
   doc.text('RUC: 80019076-9 • Paraguay', pageWidth / 2, currentY + 3.2, { align: 'center' });
 
-  // 7. AVISO LEGAL Y VALIDEZ EN RODAPÉ (UMA ÚNICA PÁGINA PERFEITA)
-  const footerY = pageHeight - 8;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.3);
-  doc.setTextColor(153, 27, 27);
-  doc.text(
-    'La presente oferta comercial tiene una validez de 20 (veinte) días calendario a partir de su fecha de emisión.',
-    pageWidth / 2,
-    footerY - 3.4,
-    { align: 'center' }
-  );
-
+  // 7. AVISO LEGAL DE RODAPÉ (UMA ÚNICA PÁGINA PERFEITA)
+  const footerY = pageHeight - 7;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(5.8);
+  doc.setFontSize(6);
   doc.setTextColor(148, 163, 184);
   doc.text(
     `Nota: Los valores de financiación bancaria son referenciales y sujetos a la liquidación definitiva de la entidad bancaria. • Sistema Cotripar SAC ${APP_VERSION}`,

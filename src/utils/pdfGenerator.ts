@@ -9,9 +9,8 @@ interface LogoData {
   ratio: number;
 }
 
-async function getLogoBase64(): Promise<LogoData | null> {
-  const candidates = ['/logo_branco.png', '/logo.png'];
-  for (const path of candidates) {
+async function getImageBase64(paths: string[], defaultRatio: number = 3.455): Promise<LogoData | null> {
+  for (const path of paths) {
     try {
       const res = await fetch(path);
       if (!res.ok) continue;
@@ -27,10 +26,10 @@ async function getLogoBase64(): Promise<LogoData | null> {
       const ratio = await new Promise<number>((resolve) => {
         const img = new Image();
         img.onload = () => {
-          const r = img.width > 0 && img.height > 0 ? img.width / img.height : 2.754;
+          const r = img.width > 0 && img.height > 0 ? img.width / img.height : defaultRatio;
           resolve(r);
         };
-        img.onerror = () => resolve(2.754);
+        img.onerror = () => resolve(defaultRatio);
         img.src = base64;
       });
 
@@ -65,48 +64,78 @@ export async function generarPDFSimulacion(
 
   // Header Background Bar (Cotripar Red: #C8102E -> RGB: 200, 16, 46)
   doc.setFillColor(200, 16, 46);
-  doc.rect(0, 0, pageWidth, 28, 'F');
+  doc.rect(0, 0, pageWidth, 35, 'F');
 
-  // Thin Dark Red Line Accent
+  // Thin Dark Red Line Accent (#991B1B)
   doc.setFillColor(153, 27, 27);
-  doc.rect(0, 28, pageWidth, 1.5, 'F');
+  doc.rect(0, 35, pageWidth, 1.5, 'F');
 
-  // Load logo with proper aspect ratio
-  const logoData = await getLogoBase64();
-  let textStartX = 14;
-  if (logoData) {
+  // Load logos in parallel
+  const [logoTopo, logoMarcas] = await Promise.all([
+    getImageBase64(['/logo_branco_topo.png', '/logo_topo.png', '/logo_branco.png'], 3.455),
+    getImageBase64(['/logo_branco_marcas.png', '/logo_marcas.png'], 18.688)
+  ]);
+
+  // ZONA SUPERIOR DO CABEÇALHO (y = 4.5mm a 23mm)
+  const leftX = 14;
+  if (logoTopo) {
     try {
-      const targetHeight = 12; // 12mm
-      const targetWidth = Math.min(36, targetHeight * (logoData.ratio || 2.754));
-      doc.addImage(logoData.base64, 'PNG', 14, 8, targetWidth, targetHeight);
-      textStartX = 14 + targetWidth + 5; // Clean breathing room after logo (e.g. ~52-55mm)
-      if (textStartX < 54) textStartX = 54;
+      const targetWidth = 48;
+      const targetHeight = targetWidth / (logoTopo.ratio || 3.455);
+      doc.addImage(logoTopo.base64, 'PNG', leftX, 4.5, targetWidth, targetHeight);
     } catch {
-      textStartX = 14;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(255, 255, 255);
+      doc.text('GRUPO COTRIPAR', leftX, 12);
     }
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(255, 255, 255);
+    doc.text('GRUPO COTRIPAR', leftX, 12);
   }
 
-  // Header Title
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.text('COTRIPAR S.A. | RUC: 80019076-9', textStartX, 11.5);
-
+  // Subtítulo Institucional limpo abaixo da logo
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.text('PROYECCIÓN FINANCIERA DE AMORTIZACIÓN — SISTEMA ALEMÁN (USD)', textStartX, 16.5);
-  doc.text('Régimen Fiscal de la República del Paraguay (IVA 10% s/ intereses bancarios)', textStartX, 21.5);
+  doc.setFontSize(7.0);
+  doc.setTextColor(254, 226, 226); // Rosado claro / branco suave
+  doc.text('División de Maquinarias e Implementos Agrícolas • RUC: 80019076-9 • Paraguay', leftX, 22.5);
 
   // Top Right Protocol & Metadata
-  doc.setFontSize(7.5);
-  doc.text(`Protocolo: ${codProtocolo}`, pageWidth - 14, 10, { align: 'right' });
-  doc.text(`Fecha y Hora: ${fechaStr}`, pageWidth - 14, 15, { align: 'right' });
-  doc.text(`Asesor Comercial: ${simulacion.vendedor_nombre || 'Asesor Cotripar'}`, pageWidth - 14, 20, { align: 'right' });
+  const rightX = pageWidth - 14;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.0);
+  doc.setTextColor(255, 255, 255);
+  doc.text('PROYECCIÓN FINANCIERA — SISTEMA ALEMÁN (USD)', rightX, 8.5, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.8);
+  doc.setTextColor(255, 255, 255);
+  doc.text(`Protocolo: ${codProtocolo}`, rightX, 12.8, { align: 'right' });
+  doc.text(`Fecha y Hora: ${fechaStr}`, rightX, 16.8, { align: 'right' });
+  doc.text(`Asesor Comercial: ${simulacion.vendedor_nombre || 'Asesor Cotripar'}`, rightX, 20.8, { align: 'right' });
+
+  // ZONA INFERIOR DO CABEÇALHO — FAIXA DE MARCAS OFICIAIS (y = 24.5mm a 34.5mm)
+  doc.setDrawColor(220, 38, 38);
+  doc.setLineWidth(0.2);
+  doc.line(14, 24.5, pageWidth - 14, 24.5);
+
+  if (logoMarcas) {
+    try {
+      const marcasWidth = 160;
+      const marcasHeight = marcasWidth / (logoMarcas.ratio || 18.688);
+      const marcasX = (pageWidth - marcasWidth) / 2;
+      doc.addImage(logoMarcas.base64, 'PNG', marcasX, 25.5, marcasWidth, marcasHeight);
+    } catch {
+      // Ignore
+    }
+  }
 
   // Reset text color to dark slate
   doc.setTextColor(30, 41, 59);
 
-  let currentY = 34;
+  let currentY = 40;
 
   // Box 1: Client and Parameters Grid
   doc.setFillColor(254, 252, 252);
