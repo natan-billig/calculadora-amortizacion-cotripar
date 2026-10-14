@@ -7,6 +7,7 @@ export const triggerPwaInstall = () => {
 
 export const isMobileDevice = (): boolean => {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  if (window.innerWidth >= 1024) return false;
   return (
     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
     (navigator.maxTouchPoints > 1 && window.innerWidth < 1024)

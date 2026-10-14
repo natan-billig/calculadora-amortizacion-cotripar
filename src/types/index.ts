@@ -1,4 +1,4 @@
-export const APP_VERSION = 'V.1.5';
+export const APP_VERSION = 'V.1.6';
 
 export type UserRole = 'admin' | 'vendedor';
 

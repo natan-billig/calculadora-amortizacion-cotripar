@@ -17,8 +17,12 @@ import {
   BarChart3,
   TrendingUp,
   DollarSign,
-  Briefcase
+  Briefcase,
+  FileSignature,
+  X,
+  CheckCircle2
 } from 'lucide-react';
+import { generarPDFCartaOferta, type CartaOfertaPayload } from '../utils/offerLetterGenerator';
 
 interface HistoryModalProps {
   onLoadSimulation: (sim: SimulacionPDF) => void;
@@ -50,6 +54,27 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   const [selectedAsesor, setSelectedAsesor] = useState<string>('todos');
   const [selectedBanco, setSelectedBanco] = useState<string>('todos');
   const [searchTerm, setSearchTerm] = useState<string>('');
+
+  // Offer Letter Modal State (Admin Only)
+  const [offerModalSim, setOfferModalSim] = useState<SimulacionPDF | null>(null);
+  const [isGeneratingOffer, setIsGeneratingOffer] = useState<boolean>(false);
+  const [offerFormData, setOfferFormData] = useState({
+    numeroOferta: '',
+    validezOferta: '15 días calendario',
+    clienteNombre: '',
+    clienteRuc: '',
+    vendedorNombre: '',
+    bancoEntidad: '',
+    maquinaImplemento: '',
+    especificacionTecnica: '',
+    cantidad: 1,
+    precioTotalUSD: 0,
+    anticipoUSD: 0,
+    descuentoUSD: 0,
+    ubicacion: 'Santa Rita / Alto Paraná, Paraguay',
+    telefono: '+595 673 220 000',
+    atencionContacto: 'Gerencia de Crédito Agropecuario'
+  });
 
   const meses = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -354,6 +379,88 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     const safeRuc = (sim.cliente_ruc || '').replace(/\s+/g, '');
     doc.save(`Cotripar_Simulacion_${safeName}${safeRuc ? `_${safeRuc}` : ''}.pdf`);
     showToast('¡PDF histórico descargado con éxito!');
+  };
+
+  const handleOpenOfferLetterModal = (sim: SimulacionPDF) => {
+    const dateObj = sim.created_at ? new Date(sim.created_at) : new Date();
+    const year = dateObj.getFullYear();
+    const suffix = sim.id ? sim.id.slice(0, 4).toUpperCase() : '001';
+    const autoNum = `OF-${year}-${suffix}`;
+
+    setOfferModalSim(sim);
+    setOfferFormData({
+      numeroOferta: autoNum,
+      validezOferta: '15 días calendario',
+      clienteNombre: sim.cliente_nombre || '',
+      clienteRuc: sim.cliente_ruc || '',
+      vendedorNombre: sim.vendedor_nombre || currentUser.nombre || 'Asesor Comercial Cotripar',
+      bancoEntidad: sim.banco_entidad || 'Banco Oficial',
+      maquinaImplemento: sim.maquina_implemento || 'Equipamiento Agrícola Cotripar',
+      especificacionTecnica: 'Maquinaria agrícola con especificaciones estándar del fabricante, lista para entrega técnica y garantía integral.',
+      cantidad: 1,
+      precioTotalUSD: Number(sim.capital_usd) || 0,
+      anticipoUSD: 0,
+      descuentoUSD: 0,
+      ubicacion: 'Santa Rita / Alto Paraná, Paraguay',
+      telefono: '+595 673 220 000',
+      atencionContacto: 'Gerencia de Negocios y Crédito Agropecuario'
+    });
+  };
+
+  const handleGenerateOfferPDF = async () => {
+    if (!offerModalSim) return;
+    setIsGeneratingOffer(true);
+    try {
+      const dateObj = offerModalSim.created_at ? new Date(offerModalSim.created_at) : new Date();
+      const mesesNombres = [
+        'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Noviembre', 'Diciembre'
+      ];
+      const fechaEmision = `${dateObj.getDate()} de ${mesesNombres[dateObj.getMonth()]} de ${dateObj.getFullYear()}`;
+
+      const payload: CartaOfertaPayload = {
+        numeroOferta: offerFormData.numeroOferta || `OF-${dateObj.getFullYear()}-001`,
+        fechaEmision,
+        validezOferta: offerFormData.validezOferta || '15 días calendario',
+        clienteNombre: offerFormData.clienteNombre || offerModalSim.cliente_nombre,
+        clienteRuc: offerFormData.clienteRuc || offerModalSim.cliente_ruc || '',
+        vendedorNombre: offerFormData.vendedorNombre || offerModalSim.vendedor_nombre,
+        bancoEntidad: offerFormData.bancoEntidad || offerModalSim.banco_entidad,
+        maquinaImplemento: offerFormData.maquinaImplemento || offerModalSim.maquina_implemento || 'Maquinaria Agrícola',
+        especificacionTecnica: offerFormData.especificacionTecnica,
+        cantidad: Number(offerFormData.cantidad) || 1,
+        precioTotalUSD: Number(offerFormData.precioTotalUSD) || Number(offerModalSim.capital_usd) || 0,
+        anticipoUSD: Number(offerFormData.anticipoUSD) || 0,
+        descuentoUSD: Number(offerFormData.descuentoUSD) || 0,
+        ubicacion: offerFormData.ubicacion,
+        telefono: offerFormData.telefono,
+        atencionContacto: offerFormData.atencionContacto,
+        plazoAnios: offerModalSim.plazo_anios,
+        periodicidad: offerModalSim.periodicidad,
+        modalidadSemestral: offerModalSim.modalidad_semestral,
+        tasaAnual: offerModalSim.tasa_anual,
+        gastoAdminUSD: offerModalSim.gasto_admin_usd,
+        mayorCuotaAnio1USD: offerModalSim.mayor_cuota_anio1_usd,
+        totalPagadoUSD: offerModalSim.total_pagado_usd
+      };
+
+      const doc = await generarPDFCartaOferta(payload);
+      const safeCliente = (payload.clienteNombre || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
+      const safeNum = (payload.numeroOferta || 'OF').replace(/[^a-zA-Z0-9]/g, '_');
+      const filename = `Carta_Oferta_${safeCliente}_${safeNum}.pdf`;
+
+      const blobUrl = doc.output('bloburl');
+      window.open(blobUrl, '_blank');
+      doc.save(filename);
+
+      showToast('¡Carta de Oferta Comercial generada con éxito!');
+      setOfferModalSim(null);
+    } catch (err) {
+      console.error('Error generando Carta de Oferta:', err);
+      showToast('Error al generar la Carta de Oferta Comercial');
+    } finally {
+      setIsGeneratingOffer(false);
+    }
   };
 
   return (
@@ -771,7 +878,18 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       </td>
 
                       <td className="py-3 px-4 text-center whitespace-nowrap">
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {currentUser?.rol === 'admin' && (
+                            <button
+                              onClick={() => handleOpenOfferLetterModal(sim)}
+                              className="px-2.5 py-1 text-cotripar-700 hover:text-white hover:bg-cotripar-700 bg-cotripar-50 border border-cotripar-200 rounded-lg transition-all duration-150 flex items-center gap-1 font-bold text-xs shadow-xs"
+                              title="Generar Carta de Oferta Comercial para el Banco"
+                            >
+                              <FileSignature className="w-3.5 h-3.5" />
+                              <span>Carta Oferta</span>
+                            </button>
+                          )}
+
                           <button
                             onClick={() => handleDownloadHistoricalPDF(sim)}
                             className="p-1.5 text-slate-600 hover:text-cotripar-700 hover:bg-cotripar-50 rounded-lg transition-colors"
@@ -806,6 +924,300 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
           </div>
         )}
       </div>
+
+      {/* Modal: Emitir Carta de Oferta Comercial para el Banco */}
+      {offerModalSim && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[92vh] flex flex-col my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-cotripar-900 text-white px-6 py-4.5 flex items-center justify-between border-b border-slate-700">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-cotripar-600/30 border border-cotripar-500/40 flex items-center justify-center text-white">
+                  <FileSignature className="w-5 h-5 text-cotripar-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    Emitir Carta de Oferta Comercial (Banco)
+                    <span className="text-[10px] font-semibold bg-cotripar-500/30 text-cotripar-200 px-2 py-0.5 rounded-full border border-cotripar-400/30">
+                      Exclusivo Admin
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    Documento formal emitido a nombre de la entidad bancaria para tramitación de crédito agropecuario.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setOfferModalSim(null)}
+                className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800/80 transition-colors"
+                title="Cerrar ventana"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-slate-700">
+              {/* Sección 1: Datos de Emisión y Banco */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-cotripar-600" />
+                  1. Protocolo de Oferta y Banco Destinatario
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      N° de Oferta Comercial
+                    </label>
+                    <input
+                      type="text"
+                      value={offerFormData.numeroOferta}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, numeroOferta: e.target.value })}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Validez de la Oferta
+                    </label>
+                    <input
+                      type="text"
+                      value={offerFormData.validezOferta}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, validezOferta: e.target.value })}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Banco Destinatario
+                    </label>
+                    <input
+                      type="text"
+                      value={offerFormData.bancoEntidad}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, bancoEntidad: e.target.value })}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Atención / A cargo de (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={offerFormData.atencionContacto}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, atencionContacto: e.target.value })}
+                      placeholder="Oficial de Crédito"
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sección 2: Datos del Cliente y Asesor Cotripar */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+                  <Briefcase className="w-3.5 h-3.5 text-cotripar-600" />
+                  2. Cliente Proponente y Asesor Comercial
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Nombre o Razón Social del Cliente
+                    </label>
+                    <input
+                      type="text"
+                      value={offerFormData.clienteNombre}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, clienteNombre: e.target.value })}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      RUC o C.I. del Cliente
+                    </label>
+                    <input
+                      type="text"
+                      value={offerFormData.clienteRuc}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, clienteRuc: e.target.value })}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Asesor Comercial Cotripar
+                    </label>
+                    <input
+                      type="text"
+                      value={offerFormData.vendedorNombre}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, vendedorNombre: e.target.value })}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Ubicación / Ciudad de Emisión
+                    </label>
+                    <input
+                      type="text"
+                      value={offerFormData.ubicacion}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, ubicacion: e.target.value })}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Teléfono de Contacto del Asesor
+                    </label>
+                    <input
+                      type="text"
+                      value={offerFormData.telefono}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, telefono: e.target.value })}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sección 3: Maquinaria y Valores Financieros */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+                  <DollarSign className="w-3.5 h-3.5 text-cotripar-600" />
+                  3. Maquinaria Cotizada y Desglose Económico
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Máquina o Implemento
+                    </label>
+                    <input
+                      type="text"
+                      value={offerFormData.maquinaImplemento}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, maquinaImplemento: e.target.value })}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Cantidad
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={offerFormData.cantidad}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, cantidad: Number(e.target.value) || 1 })}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Precio Total con IVA (USD)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={offerFormData.precioTotalUSD}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, precioTotalUSD: Number(e.target.value) || 0 })}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Entrada / Anticipo del Cliente (USD)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={offerFormData.anticipoUSD}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, anticipoUSD: Number(e.target.value) || 0 })}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2 flex items-center">
+                    <div className="w-full bg-cotripar-50 border border-cotripar-200 rounded-xl p-3 flex items-center justify-between">
+                      <span className="text-xs font-bold text-cotripar-900">
+                        VALOR A FINANCIAR (BANCO):
+                      </span>
+                      <span className="text-sm font-extrabold text-cotripar-700">
+                        {formatUSD(Math.max(0, (Number(offerFormData.precioTotalUSD) || 0) - (Number(offerFormData.anticipoUSD) || 0)))}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-4">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Especificación Técnica / Equipamiento y Estado
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={offerFormData.especificacionTecnica}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, especificacionTecnica: e.target.value })}
+                      placeholder="Ej: Unidad nueva de fábrica, rodado de alta flotación, cabina climatizada con computadora de a bordo..."
+                      className="w-full text-xs font-medium px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Banner de Crédito Asociado (ReadOnly) */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <span className="font-bold text-slate-800">Condiciones de Crédito Referenciales Vinculadas:</span>
+                    <p className="text-slate-500 text-[11px]">
+                      Plazo: <strong>{offerModalSim.plazo_anios} años</strong> ({offerModalSim.periodicidad} {offerModalSim.modalidad_semestral || ''}) • Tasa: <strong>{formatPercent(offerModalSim.tasa_anual)}</strong> • Mayor Cuota Año 1: <strong>{formatUSD(offerModalSim.mayor_cuota_anio1_usd)}</strong>
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Crédito</span>
+                  <span className="font-extrabold text-cotripar-700 text-sm">{formatUSD(offerModalSim.total_pagado_usd)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setOfferModalSim(null)}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-100 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerateOfferPDF}
+                disabled={isGeneratingOffer}
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-cotripar-700 hover:bg-cotripar-800 text-white font-bold text-xs shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isGeneratingOffer ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Generando Carta Oficial...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileSignature className="w-4 h-4" />
+                    <span>📄 Generar y Abrir Carta Oferta (PDF)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

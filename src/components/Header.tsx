@@ -104,7 +104,7 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
               <button
                 type="button"
                 onClick={triggerPwaInstall}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-cotripar-50 text-cotripar-700 hover:bg-cotripar-100 border border-cotripar-200 transition-colors shadow-sm"
+                className="md:hidden flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-cotripar-50 text-cotripar-700 hover:bg-cotripar-100 border border-cotripar-200 transition-colors shadow-sm"
                 title="Instalar Aplicación Cotripar"
               >
                 <span>📲</span>
@@ -158,7 +158,7 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
                             setShowUserDropdown(false);
                             triggerPwaInstall();
                           }}
-                          className="w-full text-left px-3.5 py-2 text-xs font-semibold text-cotripar-700 hover:bg-cotripar-50 flex items-center space-x-2 transition-colors"
+                          className="md:hidden w-full text-left px-3.5 py-2 text-xs font-semibold text-cotripar-700 hover:bg-cotripar-50 flex items-center space-x-2 transition-colors"
                         >
                           <span>📲</span>
                           <span>Instalar Aplicación</span>
