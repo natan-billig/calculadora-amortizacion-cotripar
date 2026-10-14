@@ -7,6 +7,7 @@ import { BankManagerModal } from './components/BankManagerModal';
 import { UserManagerModal } from './components/UserManagerModal';
 import { LoginScreen } from './components/LoginScreen';
 import { Toast } from './components/Toast';
+import { InstallPwaPrompt } from './components/InstallPwaPrompt';
 import type { SimulacionPDF } from './types';
 import { APP_VERSION } from './types';
 
@@ -55,6 +56,7 @@ const MainApp: React.FC = () => {
           showToast={showToast}
           onLoginSuccess={() => setCurrentTab('calculadora')}
         />
+        <InstallPwaPrompt />
         <Toast message={toastMessage} />
       </>
     );
@@ -123,6 +125,7 @@ const MainApp: React.FC = () => {
         </div>
       </footer>
 
+      <InstallPwaPrompt />
       <Toast message={toastMessage} />
     </div>
   );

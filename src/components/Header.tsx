@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Calculator, History, Settings, Users, LogOut, ChevronDown, Lock } from 'lucide-react';
 import { ChangePasswordModal } from './ChangePasswordModal';
+import { triggerPwaInstall, isAppInstalled } from './InstallPwaPrompt';
 
 interface HeaderProps {
   currentTab: 'calculadora' | 'historial' | 'tasas' | 'usuarios';
@@ -99,6 +100,18 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
 
           {/* User Profile & Actions with USD badge on mobile */}
           <div className="flex items-center space-x-2">
+            {!isAppInstalled() && (
+              <button
+                type="button"
+                onClick={triggerPwaInstall}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-cotripar-50 text-cotripar-700 hover:bg-cotripar-100 border border-cotripar-200 transition-colors shadow-sm"
+                title="Instalar Aplicación Cotripar"
+              >
+                <span>📲</span>
+                <span className="hidden sm:inline">Instalar App</span>
+              </button>
+            )}
+
             <span className="text-[10px] px-2 py-0.5 bg-cotripar-50 text-cotripar-700 rounded-full font-bold border border-cotripar-200 sm:hidden">
               USD ($)
             </span>
@@ -139,6 +152,19 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
                     </div>
 
                     <div className="border-t border-slate-100 pt-1">
+                      {!isAppInstalled() && (
+                        <button
+                          onClick={() => {
+                            setShowUserDropdown(false);
+                            triggerPwaInstall();
+                          }}
+                          className="w-full text-left px-3.5 py-2 text-xs font-semibold text-cotripar-700 hover:bg-cotripar-50 flex items-center space-x-2 transition-colors"
+                        >
+                          <span>📲</span>
+                          <span>Instalar Aplicación</span>
+                        </button>
+                      )}
+
                       {/* Password Change for All Profiles */}
                       <button
                         onClick={() => {

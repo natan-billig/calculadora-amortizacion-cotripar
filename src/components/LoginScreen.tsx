@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { User, Key, CheckCircle2, AlertCircle } from 'lucide-react';
 import { APP_VERSION } from '../types';
+import { triggerPwaInstall, isAppInstalled } from './InstallPwaPrompt';
 
 interface LoginScreenProps {
   showToast: (msg: string) => void;
@@ -38,7 +39,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ showToast, onLoginSucc
         <div className="bg-cotripar-700 p-6 text-center text-white relative">
           <div className="w-16 h-16 bg-white rounded-2xl mx-auto p-2 shadow-md flex items-center justify-center">
             <img
-              src="/logo.png"
+              src="/logo_icone.png"
               alt="Cotripar S.A."
               className="max-h-full max-w-full object-contain"
               onError={(e) => {
@@ -113,6 +114,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ showToast, onLoginSucc
               <CheckCircle2 className="w-4 h-4" />
               <span>{isSubmitting ? 'Verificando...' : 'Ingresar al Sistema'}</span>
             </button>
+
+            {!isAppInstalled() && (
+              <button
+                type="button"
+                onClick={triggerPwaInstall}
+                className="w-full py-2.5 px-4 text-xs font-bold text-cotripar-700 bg-cotripar-50 hover:bg-cotripar-100 border border-cotripar-200 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                <span>📲 Instalar App</span>
+              </button>
+            )}
           </form>
         </div>
       </div>
