@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { User, Key, CheckCircle2, AlertCircle } from 'lucide-react';
 import { APP_VERSION } from '../types';
-import { triggerPwaInstall, isAppInstalled } from './InstallPwaPrompt';
+import { triggerPwaInstall, shouldShowInstallButton } from './InstallPwaPrompt';
 
 interface LoginScreenProps {
   showToast: (msg: string) => void;
@@ -115,7 +115,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ showToast, onLoginSucc
               <span>{isSubmitting ? 'Verificando...' : 'Ingresar al Sistema'}</span>
             </button>
 
-            {!isAppInstalled() && (
+            {shouldShowInstallButton() && (
               <button
                 type="button"
                 onClick={triggerPwaInstall}

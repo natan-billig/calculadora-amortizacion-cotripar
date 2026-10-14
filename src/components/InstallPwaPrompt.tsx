@@ -5,13 +5,25 @@ export const triggerPwaInstall = () => {
   window.dispatchEvent(new Event('open-pwa-install'));
 };
 
-export const isAppInstalled = () => {
+export const isMobileDevice = (): boolean => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  return (
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 1 && window.innerWidth < 1024)
+  );
+};
+
+export const isAppInstalled = (): boolean => {
   if (typeof window === 'undefined') return false;
   return (
     window.matchMedia('(display-mode: standalone)').matches ||
     (window.navigator as any).standalone === true ||
     document.referrer.includes('android-app://')
   );
+};
+
+export const shouldShowInstallButton = (): boolean => {
+  return isMobileDevice() && !isAppInstalled();
 };
 
 export const InstallPwaPrompt: React.FC = () => {
@@ -21,6 +33,11 @@ export const InstallPwaPrompt: React.FC = () => {
   const [showInstructions, setShowInstructions] = useState(false);
 
   useEffect(() => {
+    // 0. Strictly do not run on desktop computers
+    if (!isMobileDevice()) {
+      return;
+    }
+
     // 1. Check if already running standalone
     const standalone = isAppInstalled();
     setIsStandalone(standalone);
@@ -37,12 +54,12 @@ export const InstallPwaPrompt: React.FC = () => {
       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     setIsIOS(iosDevice);
 
-    // 3. Open modal automatically when entering the site
+    // 3. Open modal automatically when entering the site on mobile
     setIsOpen(true);
 
     // 4. Listen for manual install trigger from Login or Header
     const handleOpenModal = () => {
-      if (!isAppInstalled()) {
+      if (isMobileDevice() && !isAppInstalled()) {
         setShowInstructions(false);
         setIsOpen(true);
       }
@@ -70,7 +87,7 @@ export const InstallPwaPrompt: React.FC = () => {
     };
   }, []);
 
-  if (isStandalone || !isOpen) {
+  if (!isMobileDevice() || isStandalone || !isOpen) {
     return null;
   }
 
@@ -124,7 +141,7 @@ export const InstallPwaPrompt: React.FC = () => {
             Instalar Aplicación Cotripar
           </h3>
           <p className="text-xs sm:text-sm text-slate-500 font-medium leading-relaxed px-2">
-            Instale la calculadora en la pantalla de inicio de su teléfono o computadora para acceso rápido, pantalla completa y mejor rendimiento.
+            Instale la calculadora en la pantalla de inicio de su teléfono para acceso rápido, pantalla completa y mejor rendimiento.
           </p>
         </div>
 

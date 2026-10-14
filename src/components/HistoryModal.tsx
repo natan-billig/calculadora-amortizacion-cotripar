@@ -142,9 +142,10 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         const term = searchTerm.toLowerCase();
         const matchName = (sim.cliente_nombre || '').toLowerCase().includes(term);
         const matchRuc = (sim.cliente_ruc || '').toLowerCase().includes(term);
+        const matchMaquina = (sim.maquina_implemento || '').toLowerCase().includes(term);
         const matchAsesor = (sim.vendedor_nombre || '').toLowerCase().includes(term);
         const matchBanco = (sim.banco_entidad || '').toLowerCase().includes(term);
-        if (!matchName && !matchRuc && !matchAsesor && !matchBanco) return false;
+        if (!matchName && !matchRuc && !matchMaquina && !matchAsesor && !matchBanco) return false;
       }
 
       return true;
@@ -241,6 +242,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       'Asesor Comercial',
       'Cliente',
       'RUC',
+      'Máquina / Implemento',
       'Banco',
       'Tasa Anual (%)',
       'Capital Solicitado (USD)',
@@ -276,6 +278,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         `"${(sim.vendedor_nombre || '').replace(/"/g, '""')}"`,
         `"${(sim.cliente_nombre || '').replace(/"/g, '""')}"`,
         `"${(sim.cliente_ruc || '').replace(/"/g, '""')}"`,
+        `"${(sim.maquina_implemento || '').replace(/"/g, '""')}"`,
         `"${(sim.banco_entidad || '').replace(/"/g, '""')}"`,
         Number(sim.tasa_anual || 0).toFixed(2),
         Number(sim.capital_usd || 0).toFixed(2),
@@ -723,13 +726,18 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       </td>
 
                       <td className="py-3 px-4">
-                        <span className="font-bold text-slate-900 block truncate max-w-[190px]">
+                        <span className="font-bold text-slate-900 block truncate max-w-[200px]" title={sim.cliente_nombre}>
                           {sim.cliente_nombre}
                         </span>
                         {sim.cliente_ruc ? (
                           <span className="text-[10px] text-slate-500 font-mono block">RUC: {sim.cliente_ruc}</span>
                         ) : (
                           <span className="text-[10px] text-slate-400 block">-</span>
+                        )}
+                        {sim.maquina_implemento && (
+                          <span className="text-[10px] text-cotripar-700 font-semibold block truncate max-w-[200px] mt-0.5" title={sim.maquina_implemento}>
+                            🚜 {sim.maquina_implemento}
+                          </span>
                         )}
                       </td>
 

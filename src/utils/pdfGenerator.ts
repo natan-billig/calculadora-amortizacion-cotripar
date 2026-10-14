@@ -111,88 +111,90 @@ export async function generarPDFSimulacion(
   // Box 1: Client and Parameters Grid
   doc.setFillColor(254, 252, 252);
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, currentY, pageWidth - 28, 29, 2, 2, 'FD');
+  doc.roundedRect(14, currentY, pageWidth - 28, 35, 2, 2, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(200, 16, 46); // Cotripar Red
   doc.text('1. PARÁMETROS DEL CRÉDITO Y DEL CLIENTE', 18, currentY + 5.5);
 
-  const col1X = 18;
-  const col2X = 82;
-  const col3X = 144;
+  const colLeftLabelX = 18;
+  const colLeftValX = 50;
+  const colRightLabelX = 108;
+  const colRightValX = 144;
+
+  const freqDesc = simulacion.periodicidad === 'semestral'
+    ? (simulacion.modalidad_semestral === 'zafra_interes_primero' ? 'Semestral (Zafra)' : 'Semestral (Constante)')
+    : 'Anual Estándar';
 
   // Row 1: Y = currentY + 11.5
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(71, 85, 105);
-  doc.text('Cliente / Solicitante:', col1X, currentY + 11.5);
+  doc.text('Cliente / Solicitante:', colLeftLabelX, currentY + 11.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(simulacion.cliente_nombre || 'Cliente General', col1X + 28, currentY + 11.5);
+  const clienteTxt = (simulacion.cliente_nombre || 'Cliente General').length > 32
+    ? (simulacion.cliente_nombre || '').substring(0, 30) + '...'
+    : simulacion.cliente_nombre || 'Cliente General';
+  doc.text(clienteTxt, colLeftValX, currentY + 11.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Entidad Bancaria:', col2X, currentY + 11.5);
+  doc.text('Entidad Bancaria:', colRightLabelX, currentY + 11.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(simulacion.banco_entidad || 'Banco Comercial', col2X + 24, currentY + 11.5);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Capital Solicitado:', col3X, currentY + 11.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(200, 16, 46);
-  doc.text(formatUSD(simulacion.capital_usd), col3X + 25, currentY + 11.5);
+  doc.text(simulacion.banco_entidad || 'Banco Comercial', colRightValX, currentY + 11.5);
 
   // Row 2: Y = currentY + 17
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('RUC / C.I.:', col1X, currentY + 17);
+  doc.text('RUC / C.I.:', colLeftLabelX, currentY + 17);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(simulacion.cliente_ruc || 'N/A', col1X + 28, currentY + 17);
+  doc.text(simulacion.cliente_ruc || 'N/A', colLeftValX, currentY + 17);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Tasa Nominal Anual:', col2X, currentY + 17);
+  doc.text('Tasa Nominal Anual:', colRightLabelX, currentY + 17);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(formatPercent(simulacion.tasa_anual), col2X + 28, currentY + 17);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Gasto Admin. (1%):', col3X, currentY + 17);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text(formatUSD(simulacion.gasto_admin_usd), col3X + 25, currentY + 17);
+  doc.text(formatPercent(simulacion.tasa_anual), colRightValX, currentY + 17);
 
   // Row 3: Y = currentY + 22.5
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Plazo del Crédito:', col1X, currentY + 22.5);
+  doc.text('Máquina / Implemento:', colLeftLabelX, currentY + 22.5);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text(`${simulacion.plazo_anios} años`, col1X + 28, currentY + 22.5);
+  doc.setTextColor(200, 16, 46); // Cotripar Red for highlight
+  const maquinaTxt = (simulacion.maquina_implemento || 'Equipo Cotizado').length > 32
+    ? (simulacion.maquina_implemento || '').substring(0, 30) + '...'
+    : simulacion.maquina_implemento || 'Equipo Cotizado';
+  doc.text(maquinaTxt, colLeftValX, currentY + 22.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Periodicidad:', col2X, currentY + 22.5);
+  doc.text('Plazo / Periodicidad:', colRightLabelX, currentY + 22.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  const freqDesc = simulacion.periodicidad === 'semestral'
-    ? (simulacion.modalidad_semestral === 'zafra_interes_primero' ? 'Semestral (Zafra)' : 'Semestral (Constante)')
-    : 'Anual Estándar';
-  doc.text(freqDesc, col2X + 28, currentY + 22.5);
+  doc.text(`${simulacion.plazo_anios} años • ${freqDesc}`, colRightValX, currentY + 22.5);
+
+  // Row 4: Y = currentY + 28
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Capital Solicitado:', colLeftLabelX, currentY + 28);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(`${formatUSD(simulacion.capital_usd)} (Adm: ${formatUSD(simulacion.gasto_admin_usd)})`, colLeftValX, currentY + 28);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Mayor Cuota Año 1:', col3X, currentY + 22.5);
+  doc.text('Mayor Cuota Año 1:', colRightLabelX, currentY + 28);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(200, 16, 46);
-  doc.text(formatUSD(simulacion.mayor_cuota_anio1_usd), col3X + 28, currentY + 22.5);
+  doc.text(formatUSD(simulacion.mayor_cuota_anio1_usd), colRightValX, currentY + 28);
 
-  currentY += 33;
+  currentY += 39;
 
   // Box 2: Financial Summary KPI Cards (4 columns)
   const kpiBoxHeight = 16;

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Calculator, History, Settings, Users, LogOut, ChevronDown, Lock } from 'lucide-react';
 import { ChangePasswordModal } from './ChangePasswordModal';
-import { triggerPwaInstall, isAppInstalled } from './InstallPwaPrompt';
+import { triggerPwaInstall, shouldShowInstallButton } from './InstallPwaPrompt';
 
 interface HeaderProps {
   currentTab: 'calculadora' | 'historial' | 'tasas' | 'usuarios';
@@ -100,7 +100,7 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
 
           {/* User Profile & Actions with USD badge on mobile */}
           <div className="flex items-center space-x-2">
-            {!isAppInstalled() && (
+            {shouldShowInstallButton() && (
               <button
                 type="button"
                 onClick={triggerPwaInstall}
@@ -152,7 +152,7 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
                     </div>
 
                     <div className="border-t border-slate-100 pt-1">
-                      {!isAppInstalled() && (
+                      {shouldShowInstallButton() && (
                         <button
                           onClick={() => {
                             setShowUserDropdown(false);

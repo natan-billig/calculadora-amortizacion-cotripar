@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { BancoTasa, FrecuenciaPago, ModalidadSemestral, ResultadoAleman, SimulacionPDF } from '../types';
+import { BANCOS_OFICIALES_COTRIPAR } from '../types';
 import { calcularSistemaAleman, formatUSD, formatPercent } from '../utils/calculatorEngine';
 import { generarPDFSimulacion } from '../utils/pdfGenerator';
 import { supabase } from '../lib/supabase';
@@ -18,7 +19,8 @@ import {
   FileCheck2,
   ExternalLink,
   CheckCircle2,
-  Loader2
+  Loader2,
+  Tractor
 } from 'lucide-react';
 
 interface CalculatorProps {
@@ -37,6 +39,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
   // Inputs
   const [clienteNombre, setClienteNombre] = useState<string>('');
   const [clienteRuc, setClienteRuc] = useState<string>('');
+  const [maquinaImplemento, setMaquinaImplemento] = useState<string>('');
+  const [validationTriggered, setValidationTriggered] = useState<boolean>(false);
   const [capital, setCapital] = useState<number>(110000);
   const [tasaAnual, setTasaAnual] = useState<number>(7.40);
   const [plazoAnios, setPlazoAnios] = useState<number>(5);
@@ -54,6 +58,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
     resultado: ResultadoAleman;
     cliente: string;
     ruc: string;
+    maquina: string;
     banco: string;
     docInstance: any;
     pdfBlobUrl: string;
@@ -73,21 +78,24 @@ export const Calculator: React.FC<CalculatorProps> = ({
         setBancos(data);
         if (!selectedBancoId) {
           setSelectedBancoId(data[0].id);
-          setTasaAnual(Number(data[0].tasa_anual));
+          const initialRate = data[0].tasas_por_plazo?.[String(plazoAnios)] ?? Number(data[0].tasa_anual);
+          setTasaAnual(Number(initialRate));
         }
       } else {
-        const defaults: BancoTasa[] = [
-          { id: '1', entidad: 'Interfisa Banco', tasa_anual: 7.40, activo: true },
-          { id: '2', entidad: 'Banco Sudameris', tasa_anual: 7.50, activo: true },
-          { id: '3', entidad: 'Banco Atlas', tasa_anual: 7.50, activo: true },
-          { id: '4', entidad: 'Banco Continental', tasa_anual: 7.65, activo: true },
-          { id: '5', entidad: 'Banco Basa', tasa_anual: 7.60, activo: true },
-          { id: '6', entidad: 'Banco Itaú', tasa_anual: 7.75, activo: true }
-        ];
+        const defaults: BancoTasa[] = BANCOS_OFICIALES_COTRIPAR.map((b, idx) => ({
+          id: String(idx + 1),
+          entidad: b.entidad,
+          tasa_anual: b.tasa_anual,
+          activo: true,
+          tiene_convenio: b.tiene_convenio,
+          modalidad_permitida: b.modalidad_permitida,
+          tasas_por_plazo: b.tasas_por_plazo
+        }));
         setBancos(defaults);
         if (!selectedBancoId) {
           setSelectedBancoId(defaults[0].id);
-          setTasaAnual(defaults[0].tasa_anual);
+          const initialRate = defaults[0].tasas_por_plazo?.[String(plazoAnios)] ?? defaults[0].tasa_anual;
+          setTasaAnual(Number(initialRate));
         }
       }
     } catch {
@@ -113,6 +121,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       }
       setClienteNombre(initialSimulation.cliente_nombre || '');
       setClienteRuc(initialSimulation.cliente_ruc || '');
+      setMaquinaImplemento(initialSimulation.maquina_implemento || '');
       const bFound = bancos.find(b => b.entidad.toLowerCase() === initialSimulation.banco_entidad.toLowerCase());
       if (bFound) setSelectedBancoId(bFound.id);
       showToast(`Simulación de "${initialSimulation.cliente_nombre}" cargada.`);
@@ -122,8 +131,39 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const handleBankChange = (bancoId: string) => {
     setSelectedBancoId(bancoId);
     const banco = bancos.find(b => b.id === bancoId);
-    if (banco) {
+    if (!banco) return;
+
+    const rates = banco.tasas_por_plazo;
+    if (rates && Object.keys(rates).length > 0) {
+      const currentRate = rates[String(plazoAnios)];
+      if (currentRate != null && currentRate > 0) {
+        setTasaAnual(Number(currentRate));
+      } else {
+        // Banco no tiene tasa para el plazo actual.
+        // Cambiar automáticamente al plazo disponible recomendado (5 años, o el primer plazo disponible)
+        const availableTerms = [5, 4, 3, 2, 6, 1].filter(t => rates[String(t)] != null);
+        if (availableTerms.length > 0) {
+          const newTerm = availableTerms[0];
+          setPlazoAnios(newTerm);
+          setTasaAnual(Number(rates[String(newTerm)]));
+          showToast(`Plazo ajustado a ${newTerm} años con tasa de ${rates[String(newTerm)]}% en ${banco.entidad}`);
+        } else {
+          setTasaAnual(Number(banco.tasa_anual));
+        }
+      }
+    } else {
       setTasaAnual(Number(banco.tasa_anual));
+    }
+  };
+
+  const handlePlazoChange = (newPlazo: number) => {
+    setPlazoAnios(newPlazo);
+    const banco = bancos.find(b => b.id === selectedBancoId);
+    if (banco?.tasas_por_plazo) {
+      const rate = banco.tasas_por_plazo[String(newPlazo)];
+      if (rate != null && rate > 0) {
+        setTasaAnual(Number(rate));
+      }
     }
   };
 
@@ -149,21 +189,25 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const handleReset = () => {
     setClienteNombre('');
     setClienteRuc('');
+    setMaquinaImplemento('');
+    setValidationTriggered(false);
     setCapital(110000);
     setPlazoAnios(5);
     setFrecuencia('anual');
     setModalidadSemestral('zafra_interes_primero');
     if (bancos.length > 0) {
       setSelectedBancoId(bancos[0].id);
-      setTasaAnual(Number(bancos[0].tasa_anual));
+      const defaultRate = bancos[0].tasas_por_plazo?.[5] ?? Number(bancos[0].tasa_anual);
+      setTasaAnual(Number(defaultRate));
     }
     showToast('Parámetros restablecidos.');
   };
 
   // Single Action Flow: Calculate, Generate PDF, and Save to Supabase
   const handleCalcularYGenerarPDF = async () => {
-    if (!clienteNombre.trim() || !clienteRuc.trim()) {
-      showToast('Es obligatorio ingresar el Nombre del Cliente y el RUC / C.I. para realizar el cálculo.');
+    if (!clienteNombre.trim() || !clienteRuc.trim() || !maquinaImplemento.trim()) {
+      setValidationTriggered(true);
+      showToast('Es obligatorio ingresar el Nombre del Cliente, RUC y la Máquina o Implemento cotizado.');
       return;
     }
 
@@ -175,12 +219,14 @@ export const Calculator: React.FC<CalculatorProps> = ({
     setIsProcessing(true);
     const clienteFinal = clienteNombre.trim();
     const rucFinal = clienteRuc.trim();
+    const maquinaFinal = maquinaImplemento.trim();
 
     const simulacionPayload: SimulacionPDF = {
       usuario_id: currentUser?.id || null,
       vendedor_nombre: currentUser?.nombre || 'Asesor Cotripar',
       cliente_nombre: clienteFinal,
       cliente_ruc: rucFinal,
+      maquina_implemento: maquinaFinal,
       capital_usd: resultado.capital,
       gasto_admin_usd: resultado.gastoAdmin,
       banco_entidad: selectedBancoNombre,
@@ -229,6 +275,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
         resultado,
         cliente: clienteFinal,
         ruc: rucFinal,
+        maquina: maquinaFinal,
         banco: selectedBancoNombre,
         docInstance: doc,
         pdfBlobUrl: blobUrl
@@ -282,7 +329,11 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 value={clienteNombre}
                 onChange={(e) => setClienteNombre(e.target.value)}
                 placeholder="Ej: Agropecuaria El Palmar S.A."
-                className="w-full px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
+                className={`w-full px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-slate-50 border rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all ${
+                  validationTriggered && !clienteNombre.trim()
+                    ? 'border-red-500 bg-red-50/40 ring-1 ring-red-400'
+                    : 'border-slate-200'
+                }`}
               />
             </div>
 
@@ -297,9 +348,33 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 value={clienteRuc}
                 onChange={(e) => setClienteRuc(e.target.value)}
                 placeholder="Ej: 80019076-9"
-                className="w-full px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
+                className={`w-full px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-slate-50 border rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all ${
+                  validationTriggered && !clienteRuc.trim()
+                    ? 'border-red-500 bg-red-50/40 ring-1 ring-red-400'
+                    : 'border-slate-200'
+                }`}
               />
             </div>
+          </div>
+
+          {/* Campo Obligatorio: Máquina o Implemento Cotizado (Ancho total) */}
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <Tractor className="w-3.5 h-3.5 text-slate-400" />
+              <span>Máquina o Implemento Cotizado *</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={maquinaImplemento}
+              onChange={(e) => setMaquinaImplemento(e.target.value)}
+              placeholder="Ej: Tractor Valtra BH224 / Plantadora Momentum"
+              className={`w-full px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-slate-50 border rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all ${
+                validationTriggered && !maquinaImplemento.trim()
+                  ? 'border-red-500 bg-red-50/40 ring-1 ring-red-400'
+                  : 'border-slate-200'
+              }`}
+            />
           </div>
 
           {/* 2. Capital Solicitado (USD) */}
@@ -405,7 +480,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
             </div>
           </div>
 
-          {/* 5. Plazo del Financiamiento (1 a 6 años) */}
+          {/* 5. Plazo del Financiamiento (1 a 6 años) con tasas automáticas por banco */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
@@ -417,21 +492,63 @@ export const Calculator: React.FC<CalculatorProps> = ({
               </span>
             </div>
             <div className="grid grid-cols-6 gap-1.5">
-              {[1, 2, 3, 4, 5, 6].map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPlazoAnios(p)}
-                  className={`py-2 text-xs font-extrabold rounded-xl border transition-all ${
-                    plazoAnios === p
-                      ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
-                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  {p}a
-                </button>
-              ))}
+              {[1, 2, 3, 4, 5, 6].map((p) => {
+                const currentBank = bancos.find(b => b.id === selectedBancoId);
+                const rateForP = currentBank?.tasas_por_plazo ? currentBank.tasas_por_plazo[String(p)] : null;
+                const isConfigured = currentBank?.tasas_por_plazo ? rateForP != null : true;
+                const isSelected = plazoAnios === p;
+
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => handlePlazoChange(p)}
+                    className={`py-2 px-1 text-xs font-extrabold rounded-xl border transition-all flex flex-col items-center justify-center ${
+                      isSelected
+                        ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
+                        : isConfigured
+                        ? 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        : 'bg-slate-100/50 text-slate-400 border-dashed border-slate-200 hover:bg-slate-100/80'
+                    }`}
+                    title={isConfigured ? `Tasa según tabla: ${rateForP}%` : 'Plazo sin tasa de tabla en este banco'}
+                  >
+                    <span>{p}a</span>
+                    {rateForP != null ? (
+                      <span className={`text-[9px] font-semibold mt-0.5 ${isSelected ? 'text-cotripar-100' : 'text-slate-500'}`}>
+                        {Number(rateForP).toFixed(2)}%
+                      </span>
+                    ) : (
+                      currentBank?.tasas_por_plazo && (
+                        <span className={`text-[9px] font-normal mt-0.5 ${isSelected ? 'text-cotripar-200' : 'text-slate-300'}`}>
+                          s/tasa
+                        </span>
+                      )
+                    )}
+                  </button>
+                );
+              })}
             </div>
+
+            {/* Advertencia o indicador de ajuste automático según tabla del banco */}
+            {(() => {
+              const currentBank = bancos.find(b => b.id === selectedBancoId);
+              const rateForCurrent = currentBank?.tasas_por_plazo ? currentBank.tasas_por_plazo[String(plazoAnios)] : null;
+              if (currentBank?.tasas_por_plazo && rateForCurrent == null) {
+                return (
+                  <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 font-medium">
+                    ⚠️ Plazo sin tasa de tabla en este banco — ingrese tasa manual si aplica
+                  </p>
+                );
+              }
+              if (rateForCurrent != null) {
+                return (
+                  <p className="text-[10px] text-slate-500 flex items-center gap-1 font-medium">
+                    <span>💡 Tasa ajustada automáticamente a <strong>{Number(rateForCurrent).toFixed(2)}%</strong> para {plazoAnios} {plazoAnios === 1 ? 'año' : 'años'} ({currentBank?.entidad}).</span>
+                  </p>
+                );
+              }
+              return null;
+            })()}
           </div>
 
           {/* 6. Periodicidad de Amortización */}
@@ -569,6 +686,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
               <div className="flex justify-between">
                 <span className="text-slate-500">RUC / C.I.:</span>
                 <span className="font-bold text-slate-900">{successModalData.ruc}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Máquina / Implemento:</span>
+                <span className="font-bold text-cotripar-700">{successModalData.maquina}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Capital Solicitado:</span>

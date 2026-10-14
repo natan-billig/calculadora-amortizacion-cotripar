@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { BancoTasa } from '../types';
+import { BANCOS_OFICIALES_COTRIPAR } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -11,21 +12,13 @@ import {
   RotateCcw,
   Check,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Handshake
 } from 'lucide-react';
 
 interface BankManagerModalProps {
   showToast: (msg: string) => void;
 }
-
-const DEFAULT_BANCOS = [
-  { entidad: 'Interfisa Banco', tasa_anual: 7.40 },
-  { entidad: 'Banco Sudameris', tasa_anual: 7.50 },
-  { entidad: 'Banco Atlas', tasa_anual: 7.50 },
-  { entidad: 'Banco Continental', tasa_anual: 7.65 },
-  { entidad: 'Banco Basa', tasa_anual: 7.60 },
-  { entidad: 'Banco Itaú', tasa_anual: 7.75 }
-];
 
 export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast }) => {
   const { currentUser, isAdmin } = useAuth();
@@ -40,7 +33,24 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
 
   // Form state
   const [entidadInput, setEntidadInput] = useState<string>('');
-  const [tasaInput, setTasaInput] = useState<string>('');
+  const [tieneConvenioInput, setTieneConvenioInput] = useState<boolean>(false);
+  const [modalidadInput, setModalidadInput] = useState<string>('Semestral y Anual');
+  const [tasasPorPlazoInput, setTasasPorPlazoInput] = useState<{
+    '1': string;
+    '2': string;
+    '3': string;
+    '4': string;
+    '5': string;
+    '6': string;
+  }>({
+    '1': '',
+    '2': '',
+    '3': '',
+    '4': '',
+    '5': '',
+    '6': ''
+  });
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -50,7 +60,7 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
       const { data, error } = await supabase
         .from('bancos_tasas')
         .select('*')
-        .order('tasa_anual', { ascending: true });
+        .order('entidad', { ascending: true });
 
       if (!error && data) {
         setBancos(data);
@@ -69,29 +79,73 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
   const handleStartEdit = (b: BancoTasa) => {
     setEditingId(b.id);
     setEntidadInput(b.entidad);
-    setTasaInput(b.tasa_anual.toString());
+    setTieneConvenioInput(b.tiene_convenio ?? false);
+    setModalidadInput(b.modalidad_permitida || 'Semestral y Anual');
+
+    const rates = b.tasas_por_plazo || {};
+    setTasasPorPlazoInput({
+      '1': rates['1'] != null ? String(rates['1']) : '',
+      '2': rates['2'] != null ? String(rates['2']) : '',
+      '3': rates['3'] != null ? String(rates['3']) : '',
+      '4': rates['4'] != null ? String(rates['4']) : '',
+      '5': rates['5'] != null ? String(rates['5']) : '',
+      '6': rates['6'] != null ? String(rates['6']) : ''
+    });
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
     setEntidadInput('');
-    setTasaInput('');
+    setTieneConvenioInput(false);
+    setModalidadInput('Semestral y Anual');
+    setTasasPorPlazoInput({
+      '1': '',
+      '2': '',
+      '3': '',
+      '4': '',
+      '5': '',
+      '6': ''
+    });
   };
 
   const handleSaveBank = async (e: React.FormEvent) => {
     e.preventDefault();
     const entidad = entidadInput.trim();
-    const tasa = parseFloat(tasaInput);
 
     if (!entidad) {
       showToast('Ingrese el nombre de la entidad bancaria');
       return;
     }
 
-    if (isNaN(tasa) || tasa <= 0 || tasa > 100) {
-      showToast('Ingrese una tasa anual válida (ej: 7.50)');
+    // Build JSON object for tasas_por_plazo
+    const tasasObj: Record<string, number | null> = {};
+    let hasAtLeastOneRate = false;
+
+    (['1', '2', '3', '4', '5', '6'] as const).forEach((plazo) => {
+      const strVal = tasasPorPlazoInput[plazo].trim();
+      if (strVal !== '') {
+        const parsed = parseFloat(strVal);
+        if (!isNaN(parsed) && parsed > 0 && parsed <= 100) {
+          tasasObj[plazo] = parsed;
+          hasAtLeastOneRate = true;
+        } else {
+          tasasObj[plazo] = null;
+        }
+      } else {
+        tasasObj[plazo] = null;
+      }
+    });
+
+    if (!hasAtLeastOneRate) {
+      showToast('Debe ingresar al menos una tasa para uno de los plazos (1 a 6 años).');
       return;
     }
+
+    // Default tasa_anual is 5 years, or first non-null rate
+    const defaultTasa =
+      tasasObj['5'] ??
+      Object.values(tasasObj).find((v) => v != null) ??
+      7.50;
 
     setIsSubmitting(true);
     try {
@@ -101,7 +155,10 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
           .from('bancos_tasas')
           .update({
             entidad,
-            tasa_anual: tasa,
+            tasa_anual: defaultTasa,
+            tasas_por_plazo: tasasObj,
+            tiene_convenio: tieneConvenioInput,
+            modalidad_permitida: modalidadInput,
             updated_at: new Date().toISOString()
           })
           .eq('id', editingId);
@@ -115,13 +172,14 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
         }
       } else {
         // Insert new bank
-        const { error } = await supabase
-          .from('bancos_tasas')
-          .insert({
-            entidad,
-            tasa_anual: tasa,
-            activo: true
-          });
+        const { error } = await supabase.from('bancos_tasas').insert({
+          entidad,
+          tasa_anual: defaultTasa,
+          tasas_por_plazo: tasasObj,
+          tiene_convenio: tieneConvenioInput,
+          modalidad_permitida: modalidadInput,
+          activo: true
+        });
 
         if (!error) {
           showToast(`Entidad "${entidad}" agregada al catálogo`);
@@ -149,14 +207,11 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
     }
 
     try {
-      const { error } = await supabase
-        .from('bancos_tasas')
-        .delete()
-        .eq('id', id);
+      const { error } = await supabase.from('bancos_tasas').delete().eq('id', id);
 
       if (!error) {
         showToast(`Entidad "${entidad}" eliminada`);
-        setBancos(prev => prev.filter(b => b.id !== id));
+        setBancos((prev) => prev.filter((b) => b.id !== id));
       } else {
         showToast('Error al eliminar entidad bancaria');
       }
@@ -166,21 +221,26 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
   };
 
   const handleResetDefaults = async () => {
-    if (!window.confirm('¿Restablecer las tasas bancarias a los valores predeterminados de Cotripar?')) {
+    if (!window.confirm('¿Restablecer las tasas bancarias a los 10 bancos oficiales de la planilla trimestral de Cotripar?')) {
       return;
     }
 
     setIsLoading(true);
     try {
-      for (const item of DEFAULT_BANCOS) {
-        await supabase
-          .from('bancos_tasas')
-          .upsert(
-            { entidad: item.entidad, tasa_anual: item.tasa_anual, activo: true },
-            { onConflict: 'entidad' }
-          );
+      // Clear existing records and insert the 10 official banks
+      await supabase.from('bancos_tasas').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+      for (const item of BANCOS_OFICIALES_COTRIPAR) {
+        await supabase.from('bancos_tasas').insert({
+          entidad: item.entidad,
+          tasa_anual: item.tasa_anual,
+          tiene_convenio: item.tiene_convenio,
+          modalidad_permitida: item.modalidad_permitida,
+          tasas_por_plazo: item.tasas_por_plazo,
+          activo: true
+        });
       }
-      showToast('Tasas predeterminadas restablecidas con éxito');
+      showToast('¡10 Bancos oficiales de Cotripar restablecidos con éxito!');
       fetchBancos();
     } catch {
       showToast('Error al restablecer tasas');
@@ -197,8 +257,8 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
         .eq('id', banco.id);
 
       if (!error) {
-        setBancos(prev =>
-          prev.map(b => (b.id === banco.id ? { ...b, activo: !b.activo } : b))
+        setBancos((prev) =>
+          prev.map((b) => (b.id === banco.id ? { ...b, activo: !b.activo } : b))
         );
         showToast(`${banco.entidad} ${!banco.activo ? 'activado' : 'desactivado'}`);
       }
@@ -214,10 +274,10 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <Building2 className="w-5 h-5 text-cotripar-700" />
-            <span>Gestor de Entidades Bancarias y Tasas de Interés</span>
+            <span>Gestor de Entidades Bancarias y Tasas por Plazo</span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Administración centralizada en Supabase para sincronización automática en la Calculadora.
+            Planilla trimestral oficial de Cotripar con tasas dinámicas de 1 a 6 años sincronizadas en tiempo real.
           </p>
         </div>
 
@@ -228,7 +288,7 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
               className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors flex items-center gap-1.5"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Restablecer Tasas</span>
+              <span>Restaurar Valores de Fábrica</span>
             </button>
           )}
 
@@ -243,7 +303,7 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Form to Add/Edit Bank */}
+        {/* Left: Form to Add/Edit Bank (5 cols) */}
         <div className="lg:col-span-5">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -263,6 +323,7 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
             </div>
 
             <form onSubmit={handleSaveBank} className="space-y-4">
+              {/* Nombre de la Entidad */}
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   Nombre de la Entidad Bancaria *
@@ -276,32 +337,84 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
                     required
                     value={entidadInput}
                     onChange={(e) => setEntidadInput(e.target.value)}
-                    placeholder="Ej: Banco GNB Paraguay"
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-600 focus:outline-none"
+                    placeholder="Ej: Banco Atlas"
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Tasa de Interés Anual (%) *
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Percent className="w-4 h-4 text-slate-400" />
-                  </div>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0.1"
-                    max="100"
-                    required
-                    value={tasaInput}
-                    onChange={(e) => setTasaInput(e.target.value)}
-                    placeholder="7.50"
-                    className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-600 focus:outline-none font-bold"
-                  />
-                  <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">%</span>
+              {/* Convenio & Modalidad */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Convenio Cotripar
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setTieneConvenioInput(!tieneConvenioInput)}
+                    className={`w-full py-2 px-3 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-1.5 ${
+                      tieneConvenioInput
+                        ? 'bg-cotripar-50 text-cotripar-700 border-cotripar-200'
+                        : 'bg-slate-50 text-slate-500 border-slate-200'
+                    }`}
+                  >
+                    <Handshake className="w-3.5 h-3.5" />
+                    <span>{tieneConvenioInput ? 'Con Convenio' : 'Sin Convenio'}</span>
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Modalidad Permitida
+                  </label>
+                  <select
+                    value={modalidadInput}
+                    onChange={(e) => setModalidadInput(e.target.value)}
+                    className="w-full px-2.5 py-2 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+                  >
+                    <option value="Semestral y Anual">Semestral y Anual</option>
+                    <option value="Semestral">Solo Semestral</option>
+                    <option value="Anual">Solo Anual</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Tasas por Plazo (1 a 6 Años) */}
+              <div className="space-y-2 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Percent className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Tasas de Interés por Plazo (%)</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400">Vacío = sin tasa</span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {(['1', '2', '3', '4', '5', '6'] as const).map((plazo) => (
+                    <div key={plazo} className="space-y-0.5">
+                      <span className="text-[10px] font-bold text-slate-600 block">
+                        {plazo} {plazo === '1' ? 'Año' : 'Años'}
+                      </span>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="0.1"
+                          max="100"
+                          value={tasasPorPlazoInput[plazo]}
+                          onChange={(e) =>
+                            setTasasPorPlazoInput((prev) => ({
+                              ...prev,
+                              [plazo]: e.target.value
+                            }))
+                          }
+                          placeholder="—"
+                          className="w-full pl-2 pr-5 py-1.5 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+                        />
+                        <span className="absolute right-1.5 top-1.5 text-[10px] text-slate-400 font-bold">%</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -310,15 +423,13 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
                   type="submit"
                   disabled={isSubmitting}
                   className={`w-full py-2.5 px-4 text-xs font-bold text-white rounded-xl shadow-sm flex items-center justify-center gap-2 transition-all ${
-                    editingId
-                      ? 'bg-amber-600 hover:bg-amber-700'
-                      : 'bg-cotripar-700 hover:bg-cotripar-800'
+                    editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-cotripar-700 hover:bg-cotripar-800'
                   }`}
                 >
                   {editingId ? (
                     <>
                       <Check className="w-4 h-4" />
-                      <span>Actualizar Entidad Bancaria</span>
+                      <span>Actualizar Banco y Tasas</span>
                     </>
                   ) : (
                     <>
@@ -333,20 +444,20 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
               <p className="text-[11px] leading-tight">
-                Las tasas registradas aquí se cargan automáticamente en el desplegable de bancos de la calculadora principal.
+                Al seleccionar un banco en la calculadora, la tasa se ajustará automáticamente según el plazo elegido (1 a 6 años).
               </p>
             </div>
           </div>
         </div>
 
-        {/* Right: Table of Banks */}
+        {/* Right: Table of Banks with Matrix of Terms (7 cols) */}
         <div className="lg:col-span-7">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-sm font-bold text-slate-900">
-                Catálogo Activo ({bancos.length} entidades)
+                Matriz de Tasas Oficiales ({bancos.length} bancos)
               </h3>
-              <span className="text-xs text-slate-400">Ordenado por tasa</span>
+              <span className="text-xs text-slate-400">Tasas anuales según plazo</span>
             </div>
 
             {isLoading ? (
@@ -362,59 +473,89 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
-                      <th className="py-2.5 px-4">Entidad Financiera</th>
-                      <th className="py-2.5 px-3 text-right">Tasa Anual</th>
-                      <th className="py-2.5 px-3 text-center">Estado</th>
-                      <th className="py-2.5 px-4 text-center">Acciones</th>
+                    <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-center">
+                      <th className="py-2.5 px-3 text-left">Entidad / Convenio</th>
+                      <th className="py-2.5 px-1.5 w-12">1a</th>
+                      <th className="py-2.5 px-1.5 w-12">2a</th>
+                      <th className="py-2.5 px-1.5 w-12">3a</th>
+                      <th className="py-2.5 px-1.5 w-12">4a</th>
+                      <th className="py-2.5 px-1.5 w-12">5a</th>
+                      <th className="py-2.5 px-1.5 w-12">6a</th>
+                      <th className="py-2.5 px-2">Estado</th>
+                      <th className="py-2.5 px-2">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {bancos.map((b) => (
-                      <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
-                          <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{b.entidad}</span>
-                        </td>
+                    {bancos.map((b) => {
+                      const rates = b.tasas_por_plazo || {};
+                      return (
+                        <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-2.5 px-3">
+                            <span className="font-bold text-slate-900 block truncate max-w-[150px]">
+                              {b.entidad}
+                            </span>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              {b.tiene_convenio && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 bg-cotripar-50 text-cotripar-700 border border-cotripar-200 rounded">
+                                  Convenio
+                                </span>
+                              )}
+                              <span className="text-[9px] text-slate-400">
+                                {b.modalidad_permitida || 'Ambas'}
+                              </span>
+                            </div>
+                          </td>
 
-                        <td className="py-3 px-3 text-right font-extrabold text-cotripar-700 text-sm">
-                          {Number(b.tasa_anual).toFixed(2)}%
-                        </td>
+                          {(['1', '2', '3', '4', '5', '6'] as const).map((plazo) => {
+                            const val = rates[plazo];
+                            return (
+                              <td key={plazo} className="py-2.5 px-1.5 text-center">
+                                {val != null ? (
+                                  <span className="font-bold text-slate-900">
+                                    {Number(val).toFixed(2)}%
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-300 font-normal">—</span>
+                                )}
+                              </td>
+                            );
+                          })}
 
-                        <td className="py-3 px-3 text-center">
-                          <button
-                            onClick={() => handleToggleActivo(b)}
-                            className={`px-2 py-0.5 text-[10px] font-bold rounded-full transition-colors ${
-                              b.activo
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-slate-100 text-slate-500'
-                            }`}
-                          >
-                            {b.activo ? 'Activo' : 'Inactivo'}
-                          </button>
-                        </td>
-
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
+                          <td className="py-2.5 px-2 text-center">
                             <button
-                              onClick={() => handleStartEdit(b)}
-                              className="p-1.5 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                              title="Editar tasa"
+                              onClick={() => handleToggleActivo(b)}
+                              className={`px-2 py-0.5 text-[9px] font-bold rounded-full transition-colors ${
+                                b.activo
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-slate-100 text-slate-500'
+                              }`}
                             >
-                              <Pencil className="w-3.5 h-3.5" />
+                              {b.activo ? 'Activo' : 'Inactivo'}
                             </button>
+                          </td>
 
-                            <button
-                              onClick={() => handleDeleteBank(b.id, b.entidad)}
-                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Eliminar entidad"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          <td className="py-2.5 px-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => handleStartEdit(b)}
+                                className="p-1.5 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                title="Editar tasas del banco"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteBank(b.id, b.entidad)}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Eliminar banco"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
