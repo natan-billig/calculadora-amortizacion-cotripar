@@ -107,7 +107,9 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     };
 
     const doc = await generarPDFSimulacion(sim, resultadoMock);
-    doc.save(`Cotripar_Simulacion_${sim.cliente_nombre.replace(/\s+/g, '_')}.pdf`);
+    const safeName = sim.cliente_nombre.replace(/\s+/g, '_');
+    const safeRuc = (sim.cliente_ruc || '').replace(/\s+/g, '');
+    doc.save(`Cotripar_Simulacion_${safeName}${safeRuc ? `_${safeRuc}` : ''}.pdf`);
     showToast('¡PDF histórico descargado con éxito!');
   };
 

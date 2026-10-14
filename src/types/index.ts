@@ -1,3 +1,5 @@
+export const APP_VERSION = 'V.1.2';
+
 export type UserRole = 'admin' | 'vendedor';
 
 export interface AppUser {
@@ -57,7 +59,7 @@ export interface SimulacionPDF {
   usuario_id?: string | null;
   vendedor_nombre: string;
   cliente_nombre: string;
-  cliente_ruc?: string;
+  cliente_ruc: string;
   capital_usd: number;
   gasto_admin_usd: number;
   banco_entidad: string;

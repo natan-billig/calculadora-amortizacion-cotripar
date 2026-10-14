@@ -1,22 +1,45 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { ResultadoAleman, SimulacionPDF } from '../types';
+import { APP_VERSION } from '../types';
 import { formatUSD, formatPercent } from './calculatorEngine';
 
-async function getLogoBase64(): Promise<string | null> {
-  try {
-    const res = await fetch('/logo.png');
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
+interface LogoData {
+  base64: string;
+  ratio: number;
+}
+
+async function getLogoBase64(): Promise<LogoData | null> {
+  const candidates = ['/logo_branco.png', '/logo.png'];
+  for (const path of candidates) {
+    try {
+      const res = await fetch(path);
+      if (!res.ok) continue;
+      const blob = await res.blob();
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string) || '');
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(blob);
+      });
+      if (!base64) continue;
+
+      const ratio = await new Promise<number>((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const r = img.width > 0 && img.height > 0 ? img.width / img.height : 2.754;
+          resolve(r);
+        };
+        img.onerror = () => resolve(2.754);
+        img.src = base64;
+      });
+
+      return { base64, ratio };
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 export async function generarPDFSimulacion(
@@ -48,13 +71,16 @@ export async function generarPDFSimulacion(
   doc.setFillColor(153, 27, 27);
   doc.rect(0, 28, pageWidth, 1.5, 'F');
 
-  // Try loading logo
-  const logoBase64 = await getLogoBase64();
+  // Load logo with proper aspect ratio
+  const logoData = await getLogoBase64();
   let textStartX = 14;
-  if (logoBase64) {
+  if (logoData) {
     try {
-      doc.addImage(logoBase64, 'PNG', 12, 4, 20, 20);
-      textStartX = 35;
+      const targetHeight = 12; // 12mm
+      const targetWidth = Math.min(36, targetHeight * (logoData.ratio || 2.754));
+      doc.addImage(logoData.base64, 'PNG', 14, 8, targetWidth, targetHeight);
+      textStartX = 14 + targetWidth + 5; // Clean breathing room after logo (e.g. ~52-55mm)
+      if (textStartX < 54) textStartX = 54;
     } catch {
       textStartX = 14;
     }
@@ -63,11 +89,11 @@ export async function generarPDFSimulacion(
   // Header Title
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.text('COTRIPAR S.A. | RUC: 80019076-9', textStartX, 11);
+  doc.setFontSize(13);
+  doc.text('COTRIPAR S.A. | RUC: 80019076-9', textStartX, 11.5);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.text('PROYECCIÓN FINANCIERA DE AMORTIZACIÓN — SISTEMA ALEMÁN (USD)', textStartX, 16.5);
   doc.text('Régimen Fiscal de la República del Paraguay (IVA 10% s/ intereses bancarios)', textStartX, 21.5);
 
@@ -85,22 +111,21 @@ export async function generarPDFSimulacion(
   // Box 1: Client and Parameters Grid
   doc.setFillColor(254, 252, 252);
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, currentY, pageWidth - 28, 28, 2, 2, 'FD');
+  doc.roundedRect(14, currentY, pageWidth - 28, 29, 2, 2, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(200, 16, 46); // Cotripar Red
   doc.text('1. PARÁMETROS DEL CRÉDITO Y DEL CLIENTE', 18, currentY + 5.5);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(71, 85, 105);
-
   const col1X = 18;
   const col2X = 82;
   const col3X = 144;
 
-  // Row 1
+  // Row 1: Y = currentY + 11.5
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(71, 85, 105);
   doc.text('Cliente / Solicitante:', col1X, currentY + 11.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
@@ -118,49 +143,56 @@ export async function generarPDFSimulacion(
   doc.text('Capital Solicitado:', col3X, currentY + 11.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(200, 16, 46);
-  doc.text(formatUSD(simulacion.capital_usd), col3X + 24, currentY + 11.5);
+  doc.text(formatUSD(simulacion.capital_usd), col3X + 25, currentY + 11.5);
 
-  // Row 2
+  // Row 2: Y = currentY + 17
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Plazo del Crédito:', col1X, currentY + 17);
+  doc.text('RUC / C.I.:', col1X, currentY + 17);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(`${simulacion.plazo_anios} años`, col1X + 28, currentY + 17);
+  doc.text(simulacion.cliente_ruc || 'N/A', col1X + 28, currentY + 17);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
   doc.text('Tasa Nominal Anual:', col2X, currentY + 17);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(formatPercent(simulacion.tasa_anual), col2X + 26, currentY + 17);
+  doc.text(formatPercent(simulacion.tasa_anual), col2X + 28, currentY + 17);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
   doc.text('Gasto Admin. (1%):', col3X, currentY + 17);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(formatUSD(simulacion.gasto_admin_usd), col3X + 24, currentY + 17);
+  doc.text(formatUSD(simulacion.gasto_admin_usd), col3X + 25, currentY + 17);
 
-  // Row 3
+  // Row 3: Y = currentY + 22.5
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Periodicidad:', col1X, currentY + 22.5);
+  doc.text('Plazo del Crédito:', col1X, currentY + 22.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(`${simulacion.plazo_anios} años`, col1X + 28, currentY + 22.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Periodicidad:', col2X, currentY + 22.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
   const freqDesc = simulacion.periodicidad === 'semestral'
     ? (simulacion.modalidad_semestral === 'zafra_interes_primero' ? 'Semestral (Zafra)' : 'Semestral (Constante)')
     : 'Anual Estándar';
-  doc.text(freqDesc, col1X + 28, currentY + 22.5);
+  doc.text(freqDesc, col2X + 28, currentY + 22.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Exigibilidad Máxima:', col2X, currentY + 22.5);
+  doc.text('Mayor Cuota Año 1:', col3X, currentY + 22.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(200, 16, 46);
-  doc.text(`Mayor Cuota Año 1: ${formatUSD(simulacion.mayor_cuota_anio1_usd)}`, col2X + 26, currentY + 22.5);
+  doc.text(formatUSD(simulacion.mayor_cuota_anio1_usd), col3X + 28, currentY + 22.5);
 
-  currentY += 32;
+  currentY += 33;
 
   // Box 2: Financial Summary KPI Cards (4 columns)
   const kpiBoxHeight = 16;
@@ -297,11 +329,11 @@ export async function generarPDFSimulacion(
   const splitTexto = doc.splitTextToSize(avisoLegalTexto, pageWidth - 34);
   doc.text(splitTexto, 17, postTableY + 9.5);
 
-  // Footer of A4 page
+  // Footer of A4 page with APP_VERSION
   doc.setFontSize(6.5);
   doc.setTextColor(148, 163, 184);
   doc.text(
-    'Cotripar S.A. • RUC: 80019076-9 • Valores expresados en Dólares Americanos (USD)',
+    `Cotripar S.A. • RUC: 80019076-9 • Valores expresados en Dólares Americanos (USD) • Sistema SAC ${APP_VERSION}`,
     pageWidth / 2,
     pageHeight - 7,
     { align: 'center' }

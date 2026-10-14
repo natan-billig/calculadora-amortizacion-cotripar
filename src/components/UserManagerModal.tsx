@@ -54,7 +54,7 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
     setEditingId(user.id);
     setNombre(user.nombre);
     setUsername(user.username);
-    setPassword(user.password_hash || '');
+    setPassword(''); // NEVER populate password! Starts empty!
     setRol(user.rol);
     setActivo(user.activo);
   };
@@ -70,40 +70,43 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nombre.trim() || !username.trim() || !password.trim()) {
-      showToast('Por favor complete todos los campos obligatorios');
-      return;
-    }
 
     setIsSubmitting(true);
     try {
       if (editingId) {
-        // UPDATE existing user
+        if (!nombre.trim() || !username.trim()) {
+          showToast('Por favor complete el nombre y nombre de usuario');
+          setIsSubmitting(false);
+          return;
+        }
+
+        const updateData: Record<string, any> = {
+          nombre: nombre.trim(),
+          username: username.trim().toLowerCase(),
+          rol,
+          activo
+        };
+
+        // Only update password if admin typed a new one
+        if (password.trim() !== '') {
+          updateData.password_hash = password.trim();
+        }
+
         const { error } = await supabase
           .from('app_usuarios')
-          .update({
-            nombre: nombre.trim(),
-            username: username.trim().toLowerCase(),
-            password_hash: password.trim(),
-            rol,
-            activo
-          })
+          .update(updateData)
           .eq('id', editingId);
 
         if (!error) {
           showToast('Usuario actualizado correctamente');
-          const updatedUser: AppUser = {
-            id: editingId,
-            nombre: nombre.trim(),
-            username: username.trim().toLowerCase(),
-            password_hash: password.trim(),
-            rol,
-            activo
-          };
-
-          // If edited user is current logged-in user, update in AuthContext
           if (currentUser.id === editingId) {
-            updateCurrentUser(updatedUser);
+            updateCurrentUser({
+              ...currentUser,
+              nombre: nombre.trim(),
+              username: username.trim().toLowerCase(),
+              rol,
+              activo
+            });
           }
 
           handleCancelEdit();
@@ -113,7 +116,12 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
           showToast('Error al actualizar: nombre de usuario en uso');
         }
       } else {
-        // CREATE new user
+        if (!nombre.trim() || !username.trim() || !password.trim()) {
+          showToast('Por favor complete todos los campos obligatorios');
+          setIsSubmitting(false);
+          return;
+        }
+
         const { error } = await supabase
           .from('app_usuarios')
           .insert({
@@ -246,19 +254,24 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
 
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  {editingId ? 'Nueva Contraseña *' : 'Contraseña *'}
+                  {editingId ? 'Nueva Contraseña (Opcional)' : 'Contraseña *'}
                 </label>
                 <div className="relative">
                   <Key className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
                   <input
-                    type="text"
-                    required
+                    type="password"
+                    required={!editingId}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Ingrese contraseña"
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none font-mono"
+                    placeholder={editingId ? 'Dejar en blanco para mantener la contraseña actual' : '••••••••'}
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
                   />
                 </div>
+                {editingId && (
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Dejar en blanco para mantener la contraseña actual del usuario.
+                  </p>
+                )}
               </div>
 
               <div>

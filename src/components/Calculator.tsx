@@ -14,6 +14,7 @@ import {
   Info,
   Sliders,
   User,
+  FileText,
   FileCheck2,
   ExternalLink,
   CheckCircle2,
@@ -35,6 +36,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
   // Inputs
   const [clienteNombre, setClienteNombre] = useState<string>('');
+  const [clienteRuc, setClienteRuc] = useState<string>('');
   const [capital, setCapital] = useState<number>(110000);
   const [tasaAnual, setTasaAnual] = useState<number>(7.40);
   const [plazoAnios, setPlazoAnios] = useState<number>(5);
@@ -51,6 +53,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const [successModalData, setSuccessModalData] = useState<{
     resultado: ResultadoAleman;
     cliente: string;
+    ruc: string;
     banco: string;
     docInstance: any;
     pdfBlobUrl: string;
@@ -109,6 +112,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
         setModalidadSemestral(initialSimulation.modalidad_semestral as ModalidadSemestral);
       }
       setClienteNombre(initialSimulation.cliente_nombre || '');
+      setClienteRuc(initialSimulation.cliente_ruc || '');
       const bFound = bancos.find(b => b.entidad.toLowerCase() === initialSimulation.banco_entidad.toLowerCase());
       if (bFound) setSelectedBancoId(bFound.id);
       showToast(`Simulación de "${initialSimulation.cliente_nombre}" cargada.`);
@@ -144,6 +148,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
   const handleReset = () => {
     setClienteNombre('');
+    setClienteRuc('');
     setCapital(110000);
     setPlazoAnios(5);
     setFrecuencia('anual');
@@ -157,18 +162,25 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
   // Single Action Flow: Calculate, Generate PDF, and Save to Supabase
   const handleCalcularYGenerarPDF = async () => {
+    if (!clienteNombre.trim() || !clienteRuc.trim()) {
+      showToast('Es obligatorio ingresar el Nombre del Cliente y el RUC / C.I. para realizar el cálculo.');
+      return;
+    }
+
     if (capital <= 0) {
       showToast('Por favor ingrese un monto de capital válido');
       return;
     }
 
     setIsProcessing(true);
-    const clienteFinal = clienteNombre.trim() || 'Cliente General';
+    const clienteFinal = clienteNombre.trim();
+    const rucFinal = clienteRuc.trim();
 
     const simulacionPayload: SimulacionPDF = {
       usuario_id: currentUser?.id || null,
       vendedor_nombre: currentUser?.nombre || 'Asesor Cotripar',
       cliente_nombre: clienteFinal,
+      cliente_ruc: rucFinal,
       capital_usd: resultado.capital,
       gasto_admin_usd: resultado.gastoAdmin,
       banco_entidad: selectedBancoNombre,
@@ -197,7 +209,9 @@ export const Calculator: React.FC<CalculatorProps> = ({
       }
 
       // Trigger automatic file download
-      const filename = `Cotripar_Simulacion_${clienteFinal.replace(/\s+/g, '_')}.pdf`;
+      const safeName = clienteFinal.replace(/\s+/g, '_');
+      const safeRuc = rucFinal.replace(/\s+/g, '');
+      const filename = `Cotripar_Simulacion_${safeName}_${safeRuc}.pdf`;
       doc.save(filename);
 
       // 2. Save in background to Supabase
@@ -214,6 +228,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       setSuccessModalData({
         resultado,
         cliente: clienteFinal,
+        ruc: rucFinal,
         banco: selectedBancoNombre,
         docInstance: doc,
         pdfBlobUrl: blobUrl
@@ -254,19 +269,37 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
         {/* Form Fields */}
         <div className="space-y-4">
-          {/* 1. Nombre del Cliente / Productor */}
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-slate-400" />
-              <span>Nombre del Cliente / Productor (Opcional)</span>
-            </label>
-            <input
-              type="text"
-              value={clienteNombre}
-              onChange={(e) => setClienteNombre(e.target.value)}
-              placeholder="Ej: Agropecuaria El Palmar S.A. (o dejar en blanco)"
-              className="w-full px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
-            />
+          {/* 1. Nombre del Cliente y RUC / C.I. (Obligatorios y lado a lado) */}
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div className="sm:col-span-7 space-y-1">
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-slate-400" />
+                <span>Nombre del Cliente / Razón Social *</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={clienteNombre}
+                onChange={(e) => setClienteNombre(e.target.value)}
+                placeholder="Ej: Agropecuaria El Palmar S.A."
+                className="w-full px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
+              />
+            </div>
+
+            <div className="sm:col-span-5 space-y-1">
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-slate-400" />
+                <span>RUC / C.I. *</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={clienteRuc}
+                onChange={(e) => setClienteRuc(e.target.value)}
+                placeholder="Ej: 80019076-9"
+                className="w-full px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
+              />
+            </div>
           </div>
 
           {/* 2. Capital Solicitado (USD) */}
@@ -314,7 +347,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
             </div>
           </div>
 
-          {/* 3. Entidad Bancaria (Paraguay) */}
+          {/* 3. Entidad Bancaria (Paraguay) - Sin tasa en la etiqueta de la opción */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
@@ -340,7 +373,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
             >
               {bancos.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.entidad} — {Number(b.tasa_anual).toFixed(2)}% anual
+                  {b.entidad}
                 </option>
               ))}
             </select>
@@ -534,6 +567,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 <span className="font-bold text-slate-900">{successModalData.cliente}</span>
               </div>
               <div className="flex justify-between">
+                <span className="text-slate-500">RUC / C.I.:</span>
+                <span className="font-bold text-slate-900">{successModalData.ruc}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-slate-500">Capital Solicitado:</span>
                 <span className="font-extrabold text-slate-900">{formatUSD(successModalData.resultado.capital)}</span>
               </div>
@@ -561,7 +598,9 @@ export const Calculator: React.FC<CalculatorProps> = ({
                   try {
                     window.open(successModalData.pdfBlobUrl, '_blank');
                   } catch {
-                    successModalData.docInstance.save(`Cotripar_Simulacion_${successModalData.cliente}.pdf`);
+                    const safeName = successModalData.cliente.replace(/\s+/g, '_');
+                    const safeRuc = successModalData.ruc.replace(/\s+/g, '');
+                    successModalData.docInstance.save(`Cotripar_Simulacion_${safeName}_${safeRuc}.pdf`);
                   }
                 }}
                 className="w-full py-2.5 px-4 bg-cotripar-700 hover:bg-cotripar-800 text-white font-bold text-xs rounded-xl shadow flex items-center justify-center gap-2 transition-all"

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { User, Key, CheckCircle2, AlertCircle } from 'lucide-react';
+import { APP_VERSION } from '../types';
 
 interface LoginScreenProps {
   showToast: (msg: string) => void;
@@ -63,6 +64,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ showToast, onLoginSucc
           <p className="text-xs text-cotripar-100 font-medium mt-0.5">
             Plataforma de Simulación y Proyección de Créditos • Sistema Alemán
           </p>
+          <div className="mt-2 inline-block">
+            <span className="px-2.5 py-0.5 text-[10px] font-extrabold bg-cotripar-800 text-cotripar-100 rounded-full border border-cotripar-600/50">
+              {APP_VERSION}
+            </span>
+          </div>
         </div>
 
         {/* Form Body */}
@@ -151,9 +157,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ showToast, onLoginSucc
         </div>
       </div>
 
-      {/* Footer Branding */}
-      <div className="text-center mt-6 text-xs text-slate-400">
+      {/* Footer Branding with APP_VERSION */}
+      <div className="text-center mt-6 text-xs text-slate-400 flex items-center justify-center gap-2">
         <p>Cotripar S.A. • RUC: 80019076-9 • Paraguay</p>
+        <span className="px-2 py-0.5 text-[10px] font-bold bg-white text-slate-500 rounded-full border border-slate-200">
+          {APP_VERSION}
+        </span>
       </div>
     </div>
   );
