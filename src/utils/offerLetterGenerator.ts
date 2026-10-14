@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { APP_VERSION } from '../types';
+import { APP_VERSION, type ItemMaquinaria } from '../types';
 import { formatUSD } from './calculatorEngine';
 
 export interface CartaOfertaPayload {
@@ -20,6 +20,8 @@ export interface CartaOfertaPayload {
   ubicacion?: string;
   telefono?: string;
   atencionContacto?: string;
+  // Lista detallada de equipos (V.1.7)
+  items?: ItemMaquinaria[];
   // Parámetros del crédito / simulación
   plazoAnios: number;
   periodicidad: string;
@@ -227,21 +229,46 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
 
   currentY += 2;
 
-  const cantidad = data.cantidad > 0 ? data.cantidad : 1;
-  const precioUnitario = data.precioTotalUSD / cantidad;
-  const subtotal = data.precioTotalUSD;
-  const anticipo = data.anticipoUSD && data.anticipoUSD > 0 ? data.anticipoUSD : 0;
-  const totalAFinanciar = Math.max(0, subtotal - anticipo);
+  const hasItemsList = Boolean(data.items && data.items.length > 0);
 
-  const descCompleta = data.especificacionTecnica?.trim()
-    ? `${data.maquinaImplemento}\n${data.especificacionTecnica.trim()}`
-    : `${data.maquinaImplemento}\nEquipamiento agrícola oficial con garantía y soporte integral de Cotripar S.A.`;
+  let subtotal = 0;
+  let tableBody: string[][] = [];
 
-  autoTable(doc, {
-    startY: currentY,
-    margin: { left: marginX, right: marginX },
-    head: [['Ítem', 'Descripción del Equipo / Máquina o Implemento', 'Cant.', 'Precio Unit. (USD)', 'Precio Total (USD)']],
-    body: [
+  if (hasItemsList) {
+    subtotal = data.items!.reduce(
+      (sum, it) => sum + (Number(it.cantidad) || 1) * (Number(it.precioUnitarioUSD) || 0),
+      0
+    );
+
+    tableBody = data.items!.map((it, idx) => {
+      const itemNum = String(idx + 1).padStart(2, '0');
+      const itemCant = Number(it.cantidad) > 0 ? Number(it.cantidad) : 1;
+      const unitPrice = Number(it.precioUnitarioUSD) || 0;
+      const itemTotal = itemCant * unitPrice;
+
+      let itemDesc = it.descripcion.trim() || 'Equipamiento Agrícola Cotripar';
+      if (data.items!.length === 1 && data.especificacionTecnica?.trim()) {
+        itemDesc += `\n${data.especificacionTecnica.trim()}`;
+      }
+
+      return [
+        itemNum,
+        itemDesc,
+        itemCant.toString(),
+        formatUSD(unitPrice),
+        formatUSD(itemTotal)
+      ];
+    });
+  } else {
+    const cantidad = data.cantidad > 0 ? data.cantidad : 1;
+    const precioUnitario = data.precioTotalUSD / cantidad;
+    subtotal = data.precioTotalUSD;
+
+    const descCompleta = data.especificacionTecnica?.trim()
+      ? `${data.maquinaImplemento}\n${data.especificacionTecnica.trim()}`
+      : `${data.maquinaImplemento}\nEquipamiento agrícola oficial con garantía y soporte integral de Cotripar S.A.`;
+
+    tableBody = [
       [
         '01',
         descCompleta,
@@ -249,7 +276,17 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
         formatUSD(precioUnitario),
         formatUSD(subtotal)
       ]
-    ],
+    ];
+  }
+
+  const anticipo = data.anticipoUSD && data.anticipoUSD > 0 ? data.anticipoUSD : 0;
+  const totalAFinanciar = Math.max(0, subtotal - anticipo);
+
+  autoTable(doc, {
+    startY: currentY,
+    margin: { left: marginX, right: marginX },
+    head: [['Ítem', 'Descripción del Equipo / Máquina o Implemento', 'Cant.', 'Precio Unit. (USD)', 'Precio Total (USD)']],
+    body: tableBody,
     theme: 'plain',
     headStyles: {
       fillColor: [200, 16, 46],
@@ -257,7 +294,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
       fontStyle: 'bold',
       fontSize: 7.2,
       halign: 'left',
-      cellPadding: 2.2
+      cellPadding: 2.0
     },
     columnStyles: {
       0: { cellWidth: 12, halign: 'center' },
@@ -267,9 +304,9 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
       4: { cellWidth: 30, halign: 'right' }
     },
     styles: {
-      fontSize: 7.2,
+      fontSize: 7.0,
       textColor: [30, 41, 59],
-      cellPadding: 2.5,
+      cellPadding: 2.0,
       lineColor: [226, 232, 240],
       lineWidth: 0.2
     }
@@ -286,7 +323,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.2);
     doc.setTextColor(100, 116, 139);
-    doc.text('Subtotal Equipamiento (USD):', totalsBoxX, currentY);
+    doc.text('Subtotal Equipamientos (USD):', totalsBoxX, currentY);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(15, 23, 42);
     doc.text(formatUSD(subtotal), pageWidth - marginX, currentY, { align: 'right' });
@@ -310,11 +347,11 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
   doc.setTextColor(255, 255, 255);
-  doc.text('VALOR A FINANCIAR (IVA Inc.):', totalsBoxX, currentY + 4.5);
+  doc.text('VALOR TOTAL A FINANCIAR (IVA Inc.):', totalsBoxX, currentY + 4.5);
   doc.setFontSize(8.5);
   doc.text(formatUSD(totalAFinanciar), pageWidth - marginX - 2, currentY + 4.8, { align: 'right' });
 
-  currentY += barHeight + 6;
+  currentY += barHeight + 5;
 
   // 5. SEÇÃO 2 — CONDICIONES COMERCIALES, FINANCIACIÓN Y GARANTÍA (Grid 2x2)
   doc.setFont('helvetica', 'bold');
@@ -328,7 +365,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   const boxW = (contentWidth - gridGap) / 2; // ~89mm
 
   // Box A (Financiación) & Box B (Entrega)
-  const boxAHeight = 31;
+  const boxAHeight = 32;
   const boxAX = marginX;
   const boxBX = marginX + boxW + gridGap;
 
@@ -344,7 +381,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setTextColor(200, 16, 46);
   doc.text('Condiciones de Financiación Bancaria (Ref.)', boxAX + 3.5, currentY + 4.5);
 
-  doc.setFontSize(6.5);
+  doc.setFontSize(6.3);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
   const freqTexto =
@@ -356,13 +393,14 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
 
   const finLines = [
     `• Entidad: ${data.bancoEntidad || 'Banco Comercial'}`,
+    `• Capital a Financiar: ${formatUSD(totalAFinanciar)} (Neto de Anticipo)`,
     `• Plazo: ${data.plazoAnios} años (${freqTexto})`,
     `• Tasa Nominal Ref.: ${Number(data.tasaAnual).toFixed(2)}% anual (+ IVA 10% s/ int.)`,
     `• Gasto Admin. (1%): ${formatUSD(data.gastoAdminUSD)} | Mayor Cuota Año 1: ${formatUSD(data.mayorCuotaAnio1USD)}`,
     `• Total Proyectado c/ Financiación: ${formatUSD(data.totalPagadoUSD)}`
   ];
   finLines.forEach((l, idx) => {
-    doc.text(l, boxAX + 3.5, currentY + 9 + idx * 4.2);
+    doc.text(l, boxAX + 3.5, currentY + 8.5 + idx * 3.8);
   });
 
   // Desenhar Box B

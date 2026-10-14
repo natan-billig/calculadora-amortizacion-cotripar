@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { SimulacionPDF, ResultadoAleman } from '../types';
+import type { SimulacionPDF, ResultadoAleman, ItemMaquinaria } from '../types';
 import { supabase } from '../lib/supabase';
 import { formatUSD, formatPercent } from '../utils/calculatorEngine';
 import { generarPDFSimulacion } from '../utils/pdfGenerator';
@@ -20,7 +20,8 @@ import {
   Briefcase,
   FileSignature,
   X,
-  CheckCircle2
+  CheckCircle2,
+  Plus
 } from 'lucide-react';
 import { generarPDFCartaOferta, type CartaOfertaPayload } from '../utils/offerLetterGenerator';
 
@@ -73,7 +74,8 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     descuentoUSD: 0,
     ubicacion: 'Santa Rita / Alto Paraná, Paraguay',
     telefono: '+595 673 220 000',
-    atencionContacto: 'Gerencia de Crédito Agropecuario'
+    atencionContacto: 'Gerencia de Crédito Agropecuario',
+    items: [] as ItemMaquinaria[]
   });
 
   const meses = [
@@ -387,23 +389,97 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     const suffix = sim.id ? sim.id.slice(0, 4).toUpperCase() : '001';
     const autoNum = `OF-${year}-${suffix}`;
 
+    const initialItems: ItemMaquinaria[] =
+      sim.items_json && Array.isArray(sim.items_json) && sim.items_json.length > 0
+        ? sim.items_json
+        : [
+            {
+              id: '1',
+              descripcion: sim.maquina_implemento || 'Equipamiento Agrícola Cotripar',
+              cantidad: 1,
+              precioUnitarioUSD: Number(sim.capital_usd) + (Number(sim.anticipo_usd) || 0)
+            }
+          ];
+
+    const initialAnticipo = Number(sim.anticipo_usd) || 0;
+    const itemsTotal = initialItems.reduce(
+      (acc, it) => acc + (Number(it.cantidad) || 1) * (Number(it.precioUnitarioUSD) || 0),
+      0
+    );
+
     setOfferModalSim(sim);
     setOfferFormData({
       numeroOferta: autoNum,
       validezOferta: '15 días calendario',
       clienteNombre: sim.cliente_nombre || '',
       clienteRuc: sim.cliente_ruc || '',
-      vendedorNombre: sim.vendedor_nombre || currentUser.nombre || 'Asesor Comercial Cotripar',
+      vendedorNombre: sim.vendedor_nombre || currentUser?.nombre || 'Asesor Comercial Cotripar',
       bancoEntidad: sim.banco_entidad || 'Banco Oficial',
       maquinaImplemento: sim.maquina_implemento || 'Equipamiento Agrícola Cotripar',
-      especificacionTecnica: 'Maquinaria agrícola con especificaciones estándar del fabricante, lista para entrega técnica y garantía integral.',
-      cantidad: 1,
-      precioTotalUSD: Number(sim.capital_usd) || 0,
-      anticipoUSD: 0,
+      especificacionTecnica:
+        'Maquinaria agrícola con especificaciones estándar del fabricante, lista para entrega técnica y garantía integral.',
+      cantidad: initialItems.reduce((acc, it) => acc + (Number(it.cantidad) || 1), 0),
+      precioTotalUSD: itemsTotal,
+      anticipoUSD: initialAnticipo,
       descuentoUSD: 0,
       ubicacion: 'Santa Rita / Alto Paraná, Paraguay',
       telefono: '+595 673 220 000',
-      atencionContacto: 'Gerencia de Negocios y Crédito Agropecuario'
+      atencionContacto: 'Gerencia de Negocios y Crédito Agropecuario',
+      items: initialItems
+    });
+  };
+
+  const handleOfferAddItem = () => {
+    setOfferFormData((prev) => {
+      const newItems: ItemMaquinaria[] = [
+        ...prev.items,
+        {
+          id: Date.now().toString(),
+          descripcion: '',
+          cantidad: 1,
+          precioUnitarioUSD: 0
+        }
+      ];
+      const newSubtotal = newItems.reduce(
+        (acc, it) => acc + (Number(it.cantidad) || 1) * (Number(it.precioUnitarioUSD) || 0),
+        0
+      );
+      return {
+        ...prev,
+        items: newItems,
+        precioTotalUSD: newSubtotal
+      };
+    });
+  };
+
+  const handleOfferRemoveItem = (id: string) => {
+    setOfferFormData((prev) => {
+      if (prev.items.length <= 1) return prev;
+      const newItems = prev.items.filter((it) => it.id !== id);
+      const newSubtotal = newItems.reduce(
+        (acc, it) => acc + (Number(it.cantidad) || 1) * (Number(it.precioUnitarioUSD) || 0),
+        0
+      );
+      return {
+        ...prev,
+        items: newItems,
+        precioTotalUSD: newSubtotal
+      };
+    });
+  };
+
+  const handleOfferItemChange = (id: string, field: keyof ItemMaquinaria, val: any) => {
+    setOfferFormData((prev) => {
+      const newItems = prev.items.map((it) => (it.id === id ? { ...it, [field]: val } : it));
+      const newSubtotal = newItems.reduce(
+        (acc, it) => acc + (Number(it.cantidad) || 1) * (Number(it.precioUnitarioUSD) || 0),
+        0
+      );
+      return {
+        ...prev,
+        items: newItems,
+        precioTotalUSD: newSubtotal
+      };
     });
   };
 
@@ -435,6 +511,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         ubicacion: offerFormData.ubicacion,
         telefono: offerFormData.telefono,
         atencionContacto: offerFormData.atencionContacto,
+        items: offerFormData.items,
         plazoAnios: offerModalSim.plazo_anios,
         periodicidad: offerModalSim.periodicidad,
         modalidadSemestral: offerModalSim.modalidad_semestral,
@@ -1087,49 +1164,108 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
 
               {/* Sección 3: Maquinaria y Valores Financieros */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
-                  <DollarSign className="w-3.5 h-3.5 text-cotripar-600" />
-                  3. Maquinaria Cotizada y Desglose Económico
-                </h4>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                    <DollarSign className="w-3.5 h-3.5 text-cotripar-600" />
+                    3. Maquinaria Cotizada y Desglose Económico
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={handleOfferAddItem}
+                    className="text-xs font-bold text-cotripar-700 hover:text-cotripar-800 flex items-center gap-1 bg-cotripar-50 hover:bg-cotripar-100 px-2.5 py-1 rounded-lg border border-cotripar-200 transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Agregar Ítem</span>
+                  </button>
+                </div>
+
+                {/* Items List in Modal */}
+                <div className="space-y-3 mb-4">
+                  {offerFormData.items.map((it, idx) => (
+                    <div
+                      key={it.id || idx}
+                      className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 relative"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-extrabold text-cotripar-700 uppercase">
+                          Ítem #{String(idx + 1).padStart(2, '0')}
+                        </span>
+                        {offerFormData.items.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleOfferRemoveItem(it.id)}
+                            className="text-slate-400 hover:text-red-600 p-1 text-xs"
+                            title="Eliminar este ítem"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
+                        <div className="sm:col-span-6">
+                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">
+                            Descripción del Equipo
+                          </label>
+                          <input
+                            type="text"
+                            value={it.descripcion}
+                            onChange={(e) => handleOfferItemChange(it.id, 'descripcion', e.target.value)}
+                            className="w-full text-xs font-semibold px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-cotripar-500 outline-none"
+                            placeholder="Descripción de la maquinaria"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">
+                            Cant.
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={it.cantidad}
+                            onChange={(e) =>
+                              handleOfferItemChange(
+                                it.id,
+                                'cantidad',
+                                Math.max(1, parseInt(e.target.value) || 1)
+                              )
+                            }
+                            className="w-full text-xs font-semibold px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-cotripar-500 outline-none text-center"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">
+                            Precio Unit. (USD)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={it.precioUnitarioUSD}
+                            onChange={(e) =>
+                              handleOfferItemChange(
+                                it.id,
+                                'precioUnitarioUSD',
+                                Math.max(0, parseFloat(e.target.value) || 0)
+                              )
+                            }
+                            className="w-full text-xs font-semibold px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-cotripar-500 outline-none text-right"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2 sm:text-right pt-2 sm:pt-4">
+                          <span className="text-[10px] font-bold text-slate-400 block">Subtotal:</span>
+                          <span className="text-xs font-extrabold text-slate-800">
+                            {formatUSD((Number(it.cantidad) || 1) * (Number(it.precioUnitarioUSD) || 0))}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                  <div className="sm:col-span-2">
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Máquina o Implemento
-                    </label>
-                    <input
-                      type="text"
-                      value={offerFormData.maquinaImplemento}
-                      onChange={(e) => setOfferFormData({ ...offerFormData, maquinaImplemento: e.target.value })}
-                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Cantidad
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={offerFormData.cantidad}
-                      onChange={(e) => setOfferFormData({ ...offerFormData, cantidad: Number(e.target.value) || 1 })}
-                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Precio Total con IVA (USD)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={offerFormData.precioTotalUSD}
-                      onChange={(e) => setOfferFormData({ ...offerFormData, precioTotalUSD: Number(e.target.value) || 0 })}
-                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
-                    />
-                  </div>
-
                   <div className="sm:col-span-2">
                     <label className="block text-[11px] font-bold text-slate-600 mb-1">
                       Entrada / Anticipo del Cliente (USD)
@@ -1138,7 +1274,12 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       type="number"
                       min={0}
                       value={offerFormData.anticipoUSD}
-                      onChange={(e) => setOfferFormData({ ...offerFormData, anticipoUSD: Number(e.target.value) || 0 })}
+                      onChange={(e) =>
+                        setOfferFormData({
+                          ...offerFormData,
+                          anticipoUSD: Math.max(0, parseFloat(e.target.value) || 0)
+                        })
+                      }
                       className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-500 focus:bg-white outline-none"
                     />
                   </div>
@@ -1146,7 +1287,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                   <div className="sm:col-span-2 flex items-center">
                     <div className="w-full bg-cotripar-50 border border-cotripar-200 rounded-xl p-3 flex items-center justify-between">
                       <span className="text-xs font-bold text-cotripar-900">
-                        VALOR A FINANCIAR (BANCO):
+                        VALOR TOTAL A FINANCIAR (BANCO):
                       </span>
                       <span className="text-sm font-extrabold text-cotripar-700">
                         {formatUSD(Math.max(0, (Number(offerFormData.precioTotalUSD) || 0) - (Number(offerFormData.anticipoUSD) || 0)))}

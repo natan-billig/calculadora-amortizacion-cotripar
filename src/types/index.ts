@@ -1,4 +1,11 @@
-export const APP_VERSION = 'V.1.6';
+export const APP_VERSION = 'V.1.7';
+
+export interface ItemMaquinaria {
+  id: string;
+  descripcion: string;
+  cantidad: number;
+  precioUnitarioUSD: number;
+}
 
 export type UserRole = 'admin' | 'vendedor';
 
@@ -137,6 +144,8 @@ export interface ResultadoAleman {
   totalCuotasAnio1: number;
   bancoEntidad?: string;
   maquinaImplemento?: string;
+  items?: ItemMaquinaria[];
+  anticipoUSD?: number;
 }
 
 export interface SimulacionPDF {
@@ -159,6 +168,8 @@ export interface SimulacionPDF {
   total_pagado_usd: number;
   mayor_cuota_anio1_usd: number;
   cronograma_json: CronogramaPeriodo[];
+  items_json?: ItemMaquinaria[];
+  anticipo_usd?: number;
   notas?: string;
   created_at?: string;
 }
