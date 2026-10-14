@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Calculator, History, Settings, Users, LogOut, ChevronDown, UserCheck, Lock } from 'lucide-react';
+import { Calculator, History, Settings, Users, LogOut, ChevronDown, Lock } from 'lucide-react';
 import { ChangePasswordModal } from './ChangePasswordModal';
 
 interface HeaderProps {
@@ -10,7 +10,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showToast }) => {
-  const { currentUser, isAdmin, logout, availableUsers, updateCurrentUser } = useAuth();
+  const { currentUser, isAdmin, logout } = useAuth();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
 
@@ -138,30 +138,6 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
                       </span>
                     </div>
 
-                    {/* Quick Switch for Admin testing only */}
-                    {isAdmin && availableUsers.length > 1 && (
-                      <div className="py-1">
-                        <p className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                          Cambiar Usuario
-                        </p>
-                        {availableUsers.map((user) => (
-                          <button
-                            key={user.id}
-                            onClick={() => {
-                              updateCurrentUser(user);
-                              setShowUserDropdown(false);
-                            }}
-                            className={`w-full text-left px-3.5 py-1.5 text-xs flex items-center justify-between hover:bg-slate-50 ${
-                              user.id === currentUser.id ? 'font-bold text-cotripar-700 bg-cotripar-50' : 'text-slate-700'
-                            }`}
-                          >
-                            <span className="truncate">{user.nombre}</span>
-                            {user.id === currentUser.id && <UserCheck className="w-3.5 h-3.5 text-cotripar-700" />}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
                     <div className="border-t border-slate-100 pt-1">
                       {/* Password Change for All Profiles */}
                       <button
@@ -172,7 +148,7 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
                         className="w-full text-left px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center space-x-2 transition-colors"
                       >
                         <Lock className="w-3.5 h-3.5 text-slate-500" />
-                        <span>🔒 Cambiar mi Contraseña</span>
+                        <span>Cambiar mi Contraseña</span>
                       </button>
 
                       <button

@@ -9,7 +9,7 @@ interface UserManagerModalProps {
 }
 
 export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast }) => {
-  const { currentUser, refreshUsers, updateCurrentUser } = useAuth();
+  const { currentUser, refreshUsers, refreshCurrentUser } = useAuth();
 
   // Security guard: Only Admin can access
   if (!currentUser || currentUser.rol !== 'admin') {
@@ -27,6 +27,9 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
   const [rol, setRol] = useState<UserRole>('vendedor');
   const [activo, setActivo] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  const editingUser = users.find(u => u.id === editingId) || null;
+  const isEditingAdmin = editingUser?.rol === 'admin';
 
   const loadUsers = async () => {
     setIsLoading(true);
@@ -80,15 +83,18 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
           return;
         }
 
+        const isTargetAdmin = editingUser?.rol === 'admin';
+
         const updateData: Record<string, any> = {
           nombre: nombre.trim(),
           username: username.trim().toLowerCase(),
-          rol,
-          activo
+          rol: isTargetAdmin ? 'admin' : rol, // Blindagem: admin nunca pode ser rebaixado para vendedor
+          activo: isTargetAdmin ? true : activo // Blindagem: admin nunca pode ser desativado
         };
 
-        // Only update password if admin typed a new one
-        if (password.trim() !== '') {
+        // REGRA CRÍTICA: Admin SÓ pode alterar senha de Vendedor!
+        // Se a conta for Admin, ignora/bloqueia qualquer password_hash vindo deste painel
+        if (!isTargetAdmin && password.trim() !== '') {
           updateData.password_hash = password.trim();
         }
 
@@ -100,13 +106,7 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
         if (!error) {
           showToast('Usuario actualizado correctamente');
           if (currentUser.id === editingId) {
-            updateCurrentUser({
-              ...currentUser,
-              nombre: nombre.trim(),
-              username: username.trim().toLowerCase(),
-              rol,
-              activo
-            });
+            await refreshCurrentUser();
           }
 
           handleCancelEdit();
@@ -149,6 +149,11 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
   };
 
   const handleToggleActive = async (user: AppUser) => {
+    if (user.rol === 'admin') {
+      showToast('Por seguridad, una cuenta Administradora no puede ser desactivada.');
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('app_usuarios')
@@ -252,27 +257,40 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  {editingId ? 'Nueva Contraseña (Opcional)' : 'Contraseña *'}
-                </label>
-                <div className="relative">
-                  <Key className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
-                  <input
-                    type="password"
-                    required={!editingId}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={editingId ? 'Dejar en blanco para mantener la contraseña actual' : '••••••••'}
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
-                  />
-                </div>
-                {editingId && (
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Dejar en blanco para mantener la contraseña actual del usuario.
+              {/* Password Block: Strictly protected if editing an Admin! */}
+              {isEditingAdmin ? (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
+                  <p className="font-bold flex items-center gap-1.5 text-amber-800">
+                    <Shield className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>Protección de Cuenta Administradora</span>
                   </p>
-                )}
-              </div>
+                  <p className="text-[11px] leading-relaxed text-amber-800">
+                    Por seguridad, las contraseñas de cuentas Administradoras no pueden ser modificadas desde este panel. Cada administrador debe usar la opción 'Cambiar mi Contraseña' en su propio perfil.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    {editingId ? 'Nueva Contraseña (Opcional)' : 'Contraseña *'}
+                  </label>
+                  <div className="relative">
+                    <Key className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+                    <input
+                      type="password"
+                      required={!editingId}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={editingId ? 'Dejar en blanco para mantener la contraseña actual' : '••••••••'}
+                      className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+                    />
+                  </div>
+                  {editingId && (
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Dejar en blanco para mantener la contraseña actual del usuario.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
@@ -280,12 +298,18 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
                 </label>
                 <select
                   value={rol}
+                  disabled={isEditingAdmin}
                   onChange={(e) => setRol(e.target.value as UserRole)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none font-semibold text-slate-800"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none font-semibold text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value="vendedor">Vendedor / Asesor Comercial</option>
                   <option value="admin">Administrador (Acceso Total)</option>
                 </select>
+                {isEditingAdmin && (
+                  <p className="text-[10px] text-amber-700 mt-1">
+                    El rol de una cuenta Administradora no puede ser modificado desde este panel.
+                  </p>
+                )}
               </div>
 
               {editingId && (
@@ -293,11 +317,15 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
                   <input
                     type="checkbox"
                     id="userActivo"
+                    disabled={isEditingAdmin}
                     checked={activo}
                     onChange={(e) => setActivo(e.target.checked)}
-                    className="rounded text-cotripar-700 focus:ring-cotripar-700"
+                    className="rounded text-cotripar-700 focus:ring-cotripar-700 disabled:opacity-50"
                   />
-                  <label htmlFor="userActivo" className="text-xs font-bold text-slate-700 cursor-pointer">
+                  <label
+                    htmlFor="userActivo"
+                    className={`text-xs font-bold text-slate-700 ${isEditingAdmin ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                  >
                     Usuario Activo (Permite Iniciar Sesión)
                   </label>
                 </div>
@@ -377,16 +405,25 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
                       </td>
 
                       <td className="py-3 px-3 text-center">
-                        <button
-                          onClick={() => handleToggleActive(u)}
-                          className={`px-2 py-0.5 text-[10px] font-bold rounded-full transition-colors ${
-                            u.activo
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-slate-100 text-slate-500'
-                          }`}
-                        >
-                          {u.activo ? 'Activo' : 'Inactivo'}
-                        </button>
+                        {u.rol === 'admin' ? (
+                          <span
+                            className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-green-100 text-green-800 inline-block cursor-default"
+                            title="Cuenta Administradora protegida"
+                          >
+                            Activo
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleToggleActive(u)}
+                            className={`px-2 py-0.5 text-[10px] font-bold rounded-full transition-colors ${
+                              u.activo
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            {u.activo ? 'Activo' : 'Inactivo'}
+                          </button>
+                        )}
                       </td>
 
                       <td className="py-3 px-3 text-center">

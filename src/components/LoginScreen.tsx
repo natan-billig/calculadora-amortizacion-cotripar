@@ -31,20 +31,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ showToast, onLoginSucc
     }
   };
 
-  const handleQuickLogin = async (userLogin: string, pass: string) => {
-    setErrorMsg('');
-    setIsSubmitting(true);
-    const res = await login(userLogin, pass);
-    setIsSubmitting(false);
-
-    if (res.success) {
-      showToast(`Sesión iniciada como ${userLogin}`);
-      onLoginSuccess();
-    } else {
-      setErrorMsg(res.error || 'Error al iniciar sesión');
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4">
       <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
@@ -98,7 +84,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ showToast, onLoginSucc
                   autoFocus
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="miguel o vendedor1"
+                  placeholder="Ingrese su usuario"
                   className="w-full pl-10 pr-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
                 />
               </div>
@@ -128,41 +114,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ showToast, onLoginSucc
               <span>{isSubmitting ? 'Verificando...' : 'Ingresar al Sistema'}</span>
             </button>
           </form>
-
-          {/* Quick Access for Easy Demonstration / Testing */}
-          <div className="pt-4 border-t border-slate-100 space-y-2">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center">
-              Acceso Rápido de Prueba
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('miguel', 'admin123')}
-                className="p-2.5 border border-slate-200 hover:border-cotripar-300 hover:bg-cotripar-50 rounded-xl text-left transition-colors"
-              >
-                <p className="text-xs font-bold text-slate-800">Miguel Abellá</p>
-                <p className="text-[10px] text-cotripar-700 font-semibold">Admin (admin123)</p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('vendedor1', 'cotripar123')}
-                className="p-2.5 border border-slate-200 hover:border-cotripar-300 hover:bg-cotripar-50 rounded-xl text-left transition-colors"
-              >
-                <p className="text-xs font-bold text-slate-800">Vendedor</p>
-                <p className="text-[10px] text-slate-500 font-semibold">Ventas (cotripar123)</p>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* Footer Branding with APP_VERSION */}
-      <div className="text-center mt-6 text-xs text-slate-400 flex items-center justify-center gap-2">
-        <p>Cotripar S.A. • RUC: 80019076-9 • Paraguay</p>
-        <span className="px-2 py-0.5 text-[10px] font-bold bg-white text-slate-500 rounded-full border border-slate-200">
-          {APP_VERSION}
-        </span>
+      {/* Footer Branding with APP_VERSION & Developer Credit */}
+      <div className="text-center mt-6 text-xs text-slate-400 space-y-2">
+        <div className="flex items-center justify-center gap-2">
+          <p>Cotripar S.A. • RUC: 80019076-9 • Paraguay</p>
+          <span className="px-2 py-0.5 text-[10px] font-bold bg-white text-slate-500 rounded-full border border-slate-200">
+            {APP_VERSION}
+          </span>
+        </div>
+        <div className="pt-0.5 flex items-center justify-center">
+          <a
+            href="https://wa.me/595994195695"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-cotripar-50 hover:text-cotripar-700 hover:border-cotripar-200 shadow-sm transition-all group"
+          >
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+            <span>Developed by <strong className="font-bold text-slate-800 group-hover:text-cotripar-700">Natan Billig</strong></span>
+          </a>
+        </div>
       </div>
     </div>
   );

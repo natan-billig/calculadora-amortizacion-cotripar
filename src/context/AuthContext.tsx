@@ -8,8 +8,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (username: string, passwordHash: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
-  updateCurrentUser: (user: AppUser) => void;
-  availableUsers: AppUser[];
+  refreshCurrentUser: () => Promise<void>;
   refreshUsers: () => Promise<void>;
 }
 
@@ -17,7 +16,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
-  const [availableUsers, setAvailableUsers] = useState<AppUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchUsers = async () => {
@@ -29,7 +27,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .order('nombre');
 
       if (!error && data && data.length > 0) {
-        setAvailableUsers(data as AppUser[]);
         return data as AppUser[];
       }
     } catch (err) {
@@ -40,7 +37,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       { id: '6aabb1d7-684b-427c-a2e2-e6e7e73ced2d', nombre: 'Miguel Abellá', username: 'miguel', rol: 'admin', activo: true },
       { id: '3b11cb0a-6d10-4675-bc55-97929ecc4731', nombre: 'Vendedor Cotripar', username: 'vendedor1', rol: 'vendedor', activo: true }
     ];
-    setAvailableUsers(fallback);
     return fallback;
   };
 
@@ -101,8 +97,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentUser(null);
   };
 
-  const updateCurrentUser = (user: AppUser) => {
-    setCurrentUser(user);
+  const refreshCurrentUser = async () => {
+    if (!currentUser) return;
+    try {
+      const { data } = await supabase
+        .from('app_usuarios')
+        .select('id, nombre, username, rol, activo, created_at')
+        .eq('id', currentUser.id)
+        .single();
+
+      if (data) {
+        setCurrentUser(data as AppUser);
+      }
+    } catch {
+      // ignore
+    }
   };
 
   const refreshUsers = async () => {
@@ -117,8 +126,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         login,
         logout,
-        updateCurrentUser,
-        availableUsers,
+        refreshCurrentUser,
         refreshUsers
       }}
     >
