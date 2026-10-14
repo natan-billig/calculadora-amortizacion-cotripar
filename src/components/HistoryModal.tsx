@@ -24,7 +24,13 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   onLoadSimulation,
   showToast
 }) => {
-  const { isAdmin } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
+
+  // Strict admin guard: sellers cannot access History
+  if (!currentUser || currentUser.rol !== 'admin') {
+    return null;
+  }
+
   const [simulaciones, setSimulaciones] = useState<SimulacionPDF[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -79,7 +85,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     }
   };
 
-  const handleDownloadHistoricalPDF = (sim: SimulacionPDF) => {
+  const handleDownloadHistoricalPDF = async (sim: SimulacionPDF) => {
     // Reconstruct ResultadoAleman from stored simulation
     const resultadoMock: ResultadoAleman = {
       capital: sim.capital_usd,
@@ -100,7 +106,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       bancoEntidad: sim.banco_entidad
     };
 
-    const doc = generarPDFSimulacion(sim, resultadoMock);
+    const doc = await generarPDFSimulacion(sim, resultadoMock);
     doc.save(`Cotripar_Simulacion_${sim.cliente_nombre.replace(/\s+/g, '_')}.pdf`);
     showToast('¡PDF histórico descargado con éxito!');
   };

@@ -2,22 +2,30 @@ import React, { useState, useEffect } from 'react';
 import type { AppUser, UserRole } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Users, UserPlus, Shield, User, Key, Check, RefreshCw } from 'lucide-react';
+import { Users, UserPlus, Shield, User, Key, Check, RefreshCw, Pencil, X, AlertCircle } from 'lucide-react';
 
 interface UserManagerModalProps {
   showToast: (msg: string) => void;
 }
 
 export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast }) => {
-  const { refreshUsers } = useAuth();
+  const { currentUser, refreshUsers, updateCurrentUser } = useAuth();
+
+  // Security guard: Only Admin can access
+  if (!currentUser || currentUser.rol !== 'admin') {
+    return null;
+  }
+
   const [users, setUsers] = useState<AppUser[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // New user form state
+  // Form state (handles both create and edit)
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [nombre, setNombre] = useState<string>('');
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [rol, setRol] = useState<UserRole>('vendedor');
+  const [activo, setActivo] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const loadUsers = async () => {
@@ -42,7 +50,25 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
     loadUsers();
   }, []);
 
-  const handleCreateUser = async (e: React.FormEvent) => {
+  const handleStartEdit = (user: AppUser) => {
+    setEditingId(user.id);
+    setNombre(user.nombre);
+    setUsername(user.username);
+    setPassword(user.password_hash || '');
+    setRol(user.rol);
+    setActivo(user.activo);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setNombre('');
+    setUsername('');
+    setPassword('');
+    setRol('vendedor');
+    setActivo(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nombre.trim() || !username.trim() || !password.trim()) {
       showToast('Por favor complete todos los campos obligatorios');
@@ -51,26 +77,61 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
 
     setIsSubmitting(true);
     try {
-      const { error } = await supabase
-        .from('app_usuarios')
-        .insert({
-          nombre: nombre.trim(),
-          username: username.trim().toLowerCase(),
-          password_hash: password.trim(),
-          rol,
-          activo: true
-        });
+      if (editingId) {
+        // UPDATE existing user
+        const { error } = await supabase
+          .from('app_usuarios')
+          .update({
+            nombre: nombre.trim(),
+            username: username.trim().toLowerCase(),
+            password_hash: password.trim(),
+            rol,
+            activo
+          })
+          .eq('id', editingId);
 
-      if (!error) {
-        showToast(`Usuario "${username}" creado exitosamente`);
-        setNombre('');
-        setUsername('');
-        setPassword('');
-        setRol('vendedor');
-        loadUsers();
-        refreshUsers();
+        if (!error) {
+          showToast('Usuario actualizado correctamente');
+          const updatedUser: AppUser = {
+            id: editingId,
+            nombre: nombre.trim(),
+            username: username.trim().toLowerCase(),
+            password_hash: password.trim(),
+            rol,
+            activo
+          };
+
+          // If edited user is current logged-in user, update in AuthContext
+          if (currentUser.id === editingId) {
+            updateCurrentUser(updatedUser);
+          }
+
+          handleCancelEdit();
+          loadUsers();
+          refreshUsers();
+        } else {
+          showToast('Error al actualizar: nombre de usuario en uso');
+        }
       } else {
-        showToast('Error: el nombre de usuario ya está registrado');
+        // CREATE new user
+        const { error } = await supabase
+          .from('app_usuarios')
+          .insert({
+            nombre: nombre.trim(),
+            username: username.trim().toLowerCase(),
+            password_hash: password.trim(),
+            rol,
+            activo: true
+          });
+
+        if (!error) {
+          showToast(`Usuario "${username}" creado exitosamente`);
+          handleCancelEdit();
+          loadUsers();
+          refreshUsers();
+        } else {
+          showToast('Error: el nombre de usuario ya está registrado');
+        }
       }
     } catch {
       showToast('Error de conexión con Supabase');
@@ -108,7 +169,7 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
             <span>Gestión de Usuarios y Accesos Cotripar</span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Administración de credenciales y roles para asesores y administradores de crédito.
+            Administración de credenciales, edición de nombres, logins y contraseñas.
           </p>
         </div>
 
@@ -122,15 +183,36 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Add User Form */}
+        {/* Left: Add / Edit User Form */}
         <div className="lg:col-span-5">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2 pb-3 border-b border-slate-100">
-              <UserPlus className="w-4 h-4 text-cotripar-700" />
-              Nuevo Asesor o Usuario
-            </h3>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                {editingId ? (
+                  <>
+                    <Pencil className="w-4 h-4 text-cotripar-700" />
+                    <span>Editar Usuario</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4 text-cotripar-700" />
+                    <span>Nuevo Asesor o Usuario</span>
+                  </>
+                )}
+              </h3>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="text-xs text-slate-400 hover:text-slate-600 font-semibold flex items-center gap-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Cancelar</span>
+                </button>
+              )}
+            </div>
 
-            <form onSubmit={handleCreateUser} className="space-y-3.5">
+            <form onSubmit={handleSubmit} className="space-y-3.5">
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   Nombre Completo *
@@ -142,8 +224,8 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
                     required
                     value={nombre}
                     onChange={(e) => setNombre(e.target.value)}
-                    placeholder="Ej: Carlos Benítez"
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-600 focus:outline-none"
+                    placeholder="Ej: Miguel Abellá"
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
                   />
                 </div>
               </div>
@@ -157,24 +239,24 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                  placeholder="Ej: cbenitez"
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-600 focus:outline-none"
+                  placeholder="Ej: miguel"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
                 />
               </div>
 
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Contraseña *
+                  {editingId ? 'Nueva Contraseña *' : 'Contraseña *'}
                 </label>
                 <div className="relative">
                   <Key className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
                   <input
-                    type="password"
+                    type="text"
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-600 focus:outline-none"
+                    placeholder="Ingrese contraseña"
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none font-mono"
                   />
                 </div>
               </div>
@@ -186,12 +268,27 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
                 <select
                   value={rol}
                   onChange={(e) => setRol(e.target.value as UserRole)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-600 focus:outline-none font-semibold text-slate-800"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none font-semibold text-slate-800"
                 >
                   <option value="vendedor">Vendedor / Asesor Comercial</option>
                   <option value="admin">Administrador (Acceso Total)</option>
                 </select>
               </div>
+
+              {editingId && (
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="userActivo"
+                    checked={activo}
+                    onChange={(e) => setActivo(e.target.checked)}
+                    className="rounded text-cotripar-700 focus:ring-cotripar-700"
+                  />
+                  <label htmlFor="userActivo" className="text-xs font-bold text-slate-700 cursor-pointer">
+                    Usuario Activo (Permite Iniciar Sesión)
+                  </label>
+                </div>
+              )}
 
               <div className="pt-2">
                 <button
@@ -200,14 +297,21 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
                   className="w-full py-2.5 px-4 text-xs font-bold text-white bg-cotripar-700 hover:bg-cotripar-800 rounded-xl shadow-sm flex items-center justify-center gap-2 transition-all"
                 >
                   <Check className="w-4 h-4" />
-                  <span>Crear Usuario en Supabase</span>
+                  <span>{editingId ? 'Guardar Cambios' : 'Crear Usuario en Supabase'}</span>
                 </button>
               </div>
             </form>
+
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+              <p className="text-[11px] leading-tight">
+                Los cambios en nombres, usuarios y contraseñas se sincronizan al instante en el banco de datos de Cotripar.
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Right: Users Table */}
+        {/* Right: Users Table with Edit Buttons */}
         <div className="lg:col-span-7">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between">
@@ -224,16 +328,22 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
                     <th className="py-2.5 px-3">Usuario</th>
                     <th className="py-2.5 px-3">Rol</th>
                     <th className="py-2.5 px-3 text-center">Estado</th>
+                    <th className="py-2.5 px-3 text-center">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {users.map((u) => (
-                    <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                    <tr
+                      key={u.id}
+                      className={`hover:bg-slate-50 transition-colors ${
+                        editingId === u.id ? 'bg-cotripar-50/50' : ''
+                      }`}
+                    >
                       <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold flex items-center justify-center uppercase">
+                        <div className="w-6 h-6 rounded-full bg-cotripar-100 text-cotripar-800 text-[10px] font-bold flex items-center justify-center uppercase shrink-0">
                           {u.nombre.substring(0, 2)}
                         </div>
-                        <span>{u.nombre}</span>
+                        <span className="truncate">{u.nombre}</span>
                       </td>
 
                       <td className="py-3 px-3 text-slate-600">
@@ -263,6 +373,17 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
                           }`}
                         >
                           {u.activo ? 'Activo' : 'Inactivo'}
+                        </button>
+                      </td>
+
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          onClick={() => handleStartEdit(u)}
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-cotripar-50 text-slate-700 hover:text-cotripar-700 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1"
+                          title="Editar usuario"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Editar</span>
                         </button>
                       </td>
                     </tr>

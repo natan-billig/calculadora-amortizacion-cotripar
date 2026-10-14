@@ -9,52 +9,54 @@ import {
   Calendar,
   Percent,
   Building2,
-  FileDown,
-  Save,
-  Printer,
   RotateCcw,
   Sparkles,
   Info,
   Sliders,
-  CheckCircle2
+  User,
+  FileCheck2,
+  ExternalLink,
+  CheckCircle2,
+  Loader2
 } from 'lucide-react';
 
 interface CalculatorProps {
-  onSaveSimulation: (resultado: ResultadoAleman, clientInfo: { clienteNombre: string; clienteRuc: string; notas: string }) => void;
   onOpenBankManager: () => void;
   showToast: (msg: string) => void;
   initialSimulation?: SimulacionPDF | null;
 }
 
 export const Calculator: React.FC<CalculatorProps> = ({
-  onSaveSimulation,
   onOpenBankManager,
   showToast,
   initialSimulation
 }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
 
   // Inputs
+  const [clienteNombre, setClienteNombre] = useState<string>('');
   const [capital, setCapital] = useState<number>(110000);
   const [tasaAnual, setTasaAnual] = useState<number>(7.40);
   const [plazoAnios, setPlazoAnios] = useState<number>(5);
   const [frecuencia, setFrecuencia] = useState<FrecuenciaPago>('anual');
   const [modalidadSemestral, setModalidadSemestral] = useState<ModalidadSemestral>('zafra_interes_primero');
 
-  // Client info for quick save/PDF
-  const [clienteNombre, setClienteNombre] = useState<string>('Agropecuaria El Palmar S.A.');
-  const [clienteRuc, setClienteRuc] = useState<string>('80034921-5');
-  const [notas, setNotas] = useState<string>('');
-
-  // Banks loaded from Supabase
+  // Banks from Supabase
   const [bancos, setBancos] = useState<BancoTasa[]>([]);
   const [selectedBancoId, setSelectedBancoId] = useState<string>('');
   const [isLoadingBancos, setIsLoadingBancos] = useState<boolean>(true);
 
-  // Modal for Save
-  const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
+  // Generation & Success Modal state
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [successModalData, setSuccessModalData] = useState<{
+    resultado: ResultadoAleman;
+    cliente: string;
+    banco: string;
+    docInstance: any;
+    pdfBlobUrl: string;
+  } | null>(null);
 
-  // Fetch banks from Supabase
+  // Fetch banks in real-time from Supabase
   const fetchBancos = async () => {
     setIsLoadingBancos(true);
     try {
@@ -71,7 +73,6 @@ export const Calculator: React.FC<CalculatorProps> = ({
           setTasaAnual(Number(data[0].tasa_anual));
         }
       } else {
-        // Fallback default banks
         const defaults: BancoTasa[] = [
           { id: '1', entidad: 'Interfisa Banco', tasa_anual: 7.40, activo: true },
           { id: '2', entidad: 'Banco Sudameris', tasa_anual: 7.50, activo: true },
@@ -108,14 +109,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
         setModalidadSemestral(initialSimulation.modalidad_semestral as ModalidadSemestral);
       }
       setClienteNombre(initialSimulation.cliente_nombre || '');
-      setClienteRuc(initialSimulation.cliente_ruc || '');
       const bFound = bancos.find(b => b.entidad.toLowerCase() === initialSimulation.banco_entidad.toLowerCase());
       if (bFound) setSelectedBancoId(bFound.id);
       showToast(`Simulación de "${initialSimulation.cliente_nombre}" cargada.`);
     }
   }, [initialSimulation]);
 
-  // When bank selector changes
   const handleBankChange = (bancoId: string) => {
     setSelectedBancoId(bancoId);
     const banco = bancos.find(b => b.id === bancoId);
@@ -129,7 +128,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
     return b ? b.entidad : 'Banco Comercial';
   }, [bancos, selectedBancoId]);
 
-  // Core Calculation
+  // Real-time calculation
   const resultado: ResultadoAleman = useMemo(() => {
     return calcularSistemaAleman(
       capital,
@@ -141,15 +140,35 @@ export const Calculator: React.FC<CalculatorProps> = ({
     );
   }, [capital, tasaAnual, plazoAnios, frecuencia, modalidadSemestral, selectedBancoNombre]);
 
-  // Quick preset capital buttons
   const capitalPresets = [25000, 50000, 75000, 110000, 150000, 200000];
 
-  const handleDownloadPDF = () => {
-    const simulacionData: SimulacionPDF = {
-      usuario_id: currentUser?.id,
+  const handleReset = () => {
+    setClienteNombre('');
+    setCapital(110000);
+    setPlazoAnios(5);
+    setFrecuencia('anual');
+    setModalidadSemestral('zafra_interes_primero');
+    if (bancos.length > 0) {
+      setSelectedBancoId(bancos[0].id);
+      setTasaAnual(Number(bancos[0].tasa_anual));
+    }
+    showToast('Parámetros restablecidos.');
+  };
+
+  // Single Action Flow: Calculate, Generate PDF, and Save to Supabase
+  const handleCalcularYGenerarPDF = async () => {
+    if (capital <= 0) {
+      showToast('Por favor ingrese un monto de capital válido');
+      return;
+    }
+
+    setIsProcessing(true);
+    const clienteFinal = clienteNombre.trim() || 'Cliente General';
+
+    const simulacionPayload: SimulacionPDF = {
+      usuario_id: currentUser?.id || null,
       vendedor_nombre: currentUser?.nombre || 'Asesor Cotripar',
-      cliente_nombre: clienteNombre.trim() || 'Cliente General',
-      cliente_ruc: clienteRuc.trim() || 'S/D',
+      cliente_nombre: clienteFinal,
       capital_usd: resultado.capital,
       gasto_admin_usd: resultado.gastoAdmin,
       banco_entidad: selectedBancoNombre,
@@ -162,568 +181,401 @@ export const Calculator: React.FC<CalculatorProps> = ({
       costo_financiero_total_usd: resultado.costoFinancieroTotal,
       total_pagado_usd: resultado.totalPagado,
       mayor_cuota_anio1_usd: resultado.cuotaMayorAnio1,
-      cronograma_json: resultado.cronograma,
-      notas: notas.trim()
+      cronograma_json: resultado.cronograma
     };
 
-    const doc = generarPDFSimulacion(simulacionData, resultado);
-    const filename = `Cotripar_Simulacion_${clienteNombre.replace(/\s+/g, '_') || 'Cliente'}.pdf`;
-    doc.save(filename);
-    showToast('¡Reporte PDF descargado con éxito!');
-  };
+    try {
+      // 1. Generate PDF
+      const doc = await generarPDFSimulacion(simulacionPayload, resultado);
+      const blobUrl = (doc.output('bloburl') as any)?.toString() || '';
 
-  const handlePrint = () => {
-    window.print();
-  };
+      // Try opening in new tab
+      try {
+        window.open(blobUrl, '_blank');
+      } catch {
+        // popup blocker may catch it; success modal will provide direct link
+      }
 
-  const handleReset = () => {
-    setCapital(110000);
-    setPlazoAnios(5);
-    setFrecuencia('anual');
-    setModalidadSemestral('zafra_interes_primero');
-    if (bancos.length > 0) {
-      setSelectedBancoId(bancos[0].id);
-      setTasaAnual(Number(bancos[0].tasa_anual));
+      // Trigger automatic file download
+      const filename = `Cotripar_Simulacion_${clienteFinal.replace(/\s+/g, '_')}.pdf`;
+      doc.save(filename);
+
+      // 2. Save in background to Supabase
+      supabase
+        .from('simulaciones_pdf')
+        .insert(simulacionPayload)
+        .then(({ error }) => {
+          if (error) {
+            console.warn('Error saving simulation to Supabase:', error);
+          }
+        });
+
+      // 3. Show Success Modal with action buttons
+      setSuccessModalData({
+        resultado,
+        cliente: clienteFinal,
+        banco: selectedBancoNombre,
+        docInstance: doc,
+        pdfBlobUrl: blobUrl
+      });
+
+      showToast('¡Simulación calculada y PDF generado con éxito!');
+    } catch (err) {
+      console.error(err);
+      showToast('Error al generar el reporte PDF');
+    } finally {
+      setIsProcessing(false);
     }
-    showToast('Valores restablecidos a predeterminados.');
-  };
-
-  const handleOpenSaveModal = () => {
-    setShowSaveModal(true);
-  };
-
-  const handleConfirmSave = () => {
-    if (!clienteNombre.trim()) {
-      showToast('Por favor ingrese el nombre del cliente');
-      return;
-    }
-    onSaveSimulation(resultado, {
-      clienteNombre: clienteNombre.trim(),
-      clienteRuc: clienteRuc.trim(),
-      notas: notas.trim()
-    });
-    setShowSaveModal(false);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner / Actions Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm no-print">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <span>Simulador Financiero Cotripar</span>
-            <span className="text-xs font-semibold px-2.5 py-0.5 bg-cotripar-100 text-cotripar-800 rounded-full border border-cotripar-200">
-              Sistema Alemán
-            </span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Proyección oficial de amortización con cuotas decrecientes, IVA 10% s/ intereses y 1% gasto administrativo.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleReset}
-            className="px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors flex items-center gap-1.5"
-            title="Restablecer valores"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Restablecer</span>
-          </button>
-
-          <button
-            onClick={handlePrint}
-            className="px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
-            title="Imprimir pantalla"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Imprimir</span>
-          </button>
-
-          <button
-            onClick={handleOpenSaveModal}
-            className="px-3.5 py-2 text-xs font-semibold text-cotripar-800 bg-cotripar-50 border border-cotripar-300 hover:bg-cotripar-100 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
-          >
-            <Save className="w-3.5 h-3.5 text-cotripar-700" />
-            <span>Guardar en Supabase</span>
-          </button>
-
-          <button
-            onClick={handleDownloadPDF}
-            className="px-4 py-2 text-xs font-bold text-white bg-cotripar-700 hover:bg-cotripar-800 rounded-xl transition-all flex items-center gap-2 shadow-sm hover:shadow"
-          >
-            <FileDown className="w-4 h-4" />
-            <span>Descargar PDF</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Grid: Parameters on Left, Summary KPIs & Schedule on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Input Parameters (4 cols on lg) */}
-        <div className="lg:col-span-4 space-y-5 no-print">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-cotripar-700" />
+    <div className="py-2 sm:py-6">
+      {/* Centralized Card (Mobile & Desktop Perfect) */}
+      <div className="max-w-xl mx-auto w-full bg-white p-5 sm:p-7 rounded-3xl border border-slate-200 shadow-md space-y-5">
+        {/* Card Header */}
+        <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-cotripar-50 text-cotripar-700 flex items-center justify-center font-bold">
+              <Sliders className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight">
                 Parámetros del Crédito
               </h2>
-              <span className="text-xs text-cotripar-700 font-semibold bg-cotripar-50 px-2 py-0.5 rounded">
-                USD ($)
+              <p className="text-[11px] text-slate-400 font-medium">
+                Sistema Alemán de Amortización • Cotripar S.A.
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] font-bold text-cotripar-700 bg-cotripar-50 px-2.5 py-1 rounded-full border border-cotripar-100">
+            USD ($)
+          </span>
+        </div>
+
+        {/* Form Fields */}
+        <div className="space-y-4">
+          {/* 1. Nombre del Cliente / Productor */}
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5 text-slate-400" />
+              <span>Nombre del Cliente / Productor (Opcional)</span>
+            </label>
+            <input
+              type="text"
+              value={clienteNombre}
+              onChange={(e) => setClienteNombre(e.target.value)}
+              placeholder="Ej: Agropecuaria El Palmar S.A. (o dejar en blanco)"
+              className="w-full px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
+            />
+          </div>
+
+          {/* 2. Capital Solicitado (USD) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                <DollarSign className="w-3.5 h-3.5 text-slate-400" />
+                <span>Capital Solicitado (USD)</span>
+              </label>
+              <span className="text-cotripar-700 font-black text-sm">
+                {formatUSD(capital)}
               </span>
             </div>
-
-            {/* Capital Solicitado */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                <span>Capital Solicitado (USD)</span>
-                <span className="text-cotripar-700 font-extrabold text-sm">{formatUSD(capital)}</span>
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <DollarSign className="w-4 h-4 text-slate-400" />
-                </div>
-                <input
-                  type="number"
-                  min="1000"
-                  step="1000"
-                  value={capital || ''}
-                  onChange={(e) => setCapital(Math.max(0, parseFloat(e.target.value) || 0))}
-                  className="w-full pl-9 pr-3 py-2.5 text-sm font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-600 focus:border-transparent transition-all"
-                  placeholder="110,000"
-                />
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                <span className="text-xs font-bold text-slate-400">$</span>
               </div>
-
-              {/* Quick Preset Buttons */}
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {capitalPresets.map((val) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => setCapital(val)}
-                    className={`px-2 py-1 text-[11px] font-semibold rounded-lg transition-colors ${
-                      capital === val
-                        ? 'bg-cotripar-700 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    ${val / 1000}k
-                  </button>
-                ))}
-              </div>
+              <input
+                type="number"
+                min="1000"
+                step="1000"
+                value={capital || ''}
+                onChange={(e) => setCapital(Math.max(0, parseFloat(e.target.value) || 0))}
+                className="w-full pl-8 pr-3.5 py-2.5 text-sm font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
+                placeholder="110,000"
+              />
             </div>
 
-            {/* Banco / Entidad Financiera */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                  <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Entidad Bancaria (Paraguay)</span>
-                </label>
+            {/* Quick Presets */}
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {capitalPresets.map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setCapital(val)}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
+                    capital === val
+                      ? 'bg-cotripar-700 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  ${val / 1000}k
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. Entidad Bancaria (Paraguay) */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                <span>Entidad Bancaria (Paraguay)</span>
+              </label>
+              {/* Oculto estrictamente para vendedores; solo visible para admin */}
+              {isAdmin && (
                 <button
                   type="button"
                   onClick={onOpenBankManager}
-                  className="text-[11px] font-semibold text-cotripar-700 hover:text-cotripar-800 hover:underline"
+                  className="text-[11px] font-bold text-cotripar-700 hover:underline"
                 >
                   ⚙️ Gestionar Tasas
                 </button>
-              </div>
-              <select
-                value={selectedBancoId}
-                onChange={(e) => handleBankChange(e.target.value)}
-                disabled={isLoadingBancos}
-                className="w-full px-3 py-2.5 text-sm font-semibold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-600 focus:border-transparent transition-all"
+              )}
+            </div>
+            <select
+              value={selectedBancoId}
+              onChange={(e) => handleBankChange(e.target.value)}
+              disabled={isLoadingBancos}
+              className="w-full px-3.5 py-2.5 text-sm font-semibold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
+            >
+              {bancos.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.entidad} — {Number(b.tasa_anual).toFixed(2)}% anual
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 4. Tasa de Interés Anual (%) */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Percent className="w-3.5 h-3.5 text-slate-400" />
+                <span>Tasa de Interés Anual (%)</span>
+              </label>
+              <span className="text-xs font-bold text-slate-500">
+                {formatPercent(tasaAnual)}
+              </span>
+            </div>
+            <div className="relative">
+              <input
+                type="number"
+                min="0.1"
+                max="100"
+                step="0.05"
+                value={tasaAnual || ''}
+                onChange={(e) => setTasaAnual(Math.max(0, parseFloat(e.target.value) || 0))}
+                className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
+                placeholder="7.40"
+              />
+              <span className="absolute right-3.5 top-2.5 text-xs text-slate-400 font-bold">%</span>
+            </div>
+          </div>
+
+          {/* 5. Plazo del Financiamiento (1 a 6 años) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                <span>Plazo del Financiamiento</span>
+              </label>
+              <span className="text-cotripar-700 font-black text-xs">
+                {plazoAnios} {plazoAnios === 1 ? 'Año' : 'Años'}
+              </span>
+            </div>
+            <div className="grid grid-cols-6 gap-1.5">
+              {[1, 2, 3, 4, 5, 6].map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPlazoAnios(p)}
+                  className={`py-2 text-xs font-extrabold rounded-xl border transition-all ${
+                    plazoAnios === p
+                      ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {p}a
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 6. Periodicidad de Amortización */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-700 block">
+              Periodicidad de Amortización
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setFrecuencia('anual')}
+                className={`py-2.5 px-3 text-xs font-bold rounded-xl border transition-all text-center ${
+                  frecuencia === 'anual'
+                    ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
               >
-                {bancos.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.entidad} — {Number(b.tasa_anual).toFixed(2)}% anual
-                  </option>
-                ))}
-              </select>
+                Anual (1 cuota/año)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFrecuencia('semestral')}
+                className={`py-2.5 px-3 text-xs font-bold rounded-xl border transition-all text-center ${
+                  frecuencia === 'semestral'
+                    ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Semestral (2 cuotas/año)
+              </button>
             </div>
 
-            {/* Tasa Anual de Interés (%) */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                <span className="flex items-center gap-1">
-                  <Percent className="w-3.5 h-3.5 text-slate-400" />
-                  Tasa de Interés Anual (%)
-                </span>
-                <span className="text-slate-900 font-extrabold text-xs">{formatPercent(tasaAnual)}</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0.1"
-                  max="100"
-                  step="0.05"
-                  value={tasaAnual || ''}
-                  onChange={(e) => setTasaAnual(Math.max(0, parseFloat(e.target.value) || 0))}
-                  className="w-full px-3 py-2.5 text-sm font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-600 focus:border-transparent transition-all"
-                  placeholder="7.40"
-                />
-                <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">%</span>
-              </div>
-            </div>
-
-            {/* Plazo en Años (1 a 6) */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  Plazo del Financiamiento
-                </span>
-                <span className="text-cotripar-700 font-extrabold text-xs">
-                  {plazoAnios} {plazoAnios === 1 ? 'Año' : 'Años'}
-                </span>
-              </label>
-              <div className="grid grid-cols-6 gap-1.5">
-                {[1, 2, 3, 4, 5, 6].map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setPlazoAnios(p)}
-                    className={`py-2 text-xs font-bold rounded-xl border transition-all ${
-                      plazoAnios === p
-                        ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {p}a
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Frecuencia de Pago */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700">Periodicidad de Amortización</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFrecuencia('anual')}
-                  className={`py-2.5 px-3 text-xs font-bold rounded-xl border transition-all text-center ${
-                    frecuencia === 'anual'
-                      ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
-                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  Anual (1 cuota/año)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFrecuencia('semestral')}
-                  className={`py-2.5 px-3 text-xs font-bold rounded-xl border transition-all text-center ${
-                    frecuencia === 'semestral'
-                      ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
-                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  Semestral (2 cuotas/año)
-                </button>
-              </div>
-            </div>
-
-            {/* Modalidad Semestral (Zafra vs Constante) */}
+            {/* Modalidad Semestral */}
             {frecuencia === 'semestral' && (
-              <div className="space-y-1.5 p-3 bg-cotripar-50/70 border border-cotripar-200 rounded-xl animate-in fade-in">
+              <div className="mt-2 p-3 bg-cotripar-50/70 border border-cotripar-200 rounded-xl animate-in fade-in space-y-1.5">
                 <label className="text-xs font-bold text-cotripar-900 flex items-center gap-1">
                   <Sparkles className="w-3.5 h-3.5 text-cotripar-700" />
-                  <span>Esquema Semestral de Pagos</span>
+                  <span>Modalidad Semestral</span>
                 </label>
                 <select
                   value={modalidadSemestral}
                   onChange={(e) => setModalidadSemestral(e.target.value as ModalidadSemestral)}
-                  className="w-full px-3 py-2 text-xs font-semibold text-slate-900 bg-white border border-cotripar-300 rounded-lg focus:ring-2 focus:ring-cotripar-600"
+                  className="w-full px-3 py-2 text-xs font-bold text-slate-900 bg-white border border-cotripar-300 rounded-lg focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
                 >
                   <option value="zafra_interes_primero">
-                    Esquema Zafra (1° sem solo interés, 2° sem cap + int)
+                    Zafra (1° sem solo interés, 2° sem cap + int)
                   </option>
                   <option value="constante">
-                    Amortización Constante Semestral (Capital uniforme)
+                    Constante Semestral (Capital uniforme)
                   </option>
                 </select>
-                <p className="text-[10px] text-cotripar-800 leading-tight">
+                <p className="text-[10px] text-cotripar-800">
                   {modalidadSemestral === 'zafra_interes_primero'
-                    ? '🌾 Ideal para zafreros: paga solo intereses en siembra/entresafra y amortiza capital en época de cosecha.'
-                    : '⚖️ Amortización lineal regular: el capital se divide equitativamente en todos los semestres.'}
+                    ? '🌾 Esquema Zafra: cuota de interés en siembra y amortización principal en cosecha.'
+                    : '⚖️ Amortización constante: el capital se divide equitativamente en todos los semestres.'}
                 </p>
               </div>
             )}
+          </div>
 
-            {/* Gasto Administrativo 1% (Automatic) */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
-              <div>
-                <span className="font-semibold text-slate-700 block">Gasto Administrativo (1%):</span>
-                <span className="text-[10px] text-slate-500">Cómputo automático sobre capital</span>
-              </div>
-              <span className="font-bold text-slate-900 text-sm">{formatUSD(resultado.gastoAdmin)}</span>
+          {/* 7. Resumen Compacto: Gasto Administrativo */}
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+            <div>
+              <span className="font-bold text-slate-700 block">Gasto Administrativo (1%):</span>
+              <span className="text-[10px] text-slate-400">Cálculo automático s/ capital</span>
             </div>
+            <span className="font-extrabold text-slate-900 text-sm">
+              {formatUSD(resultado.gastoAdmin)}
+            </span>
+          </div>
 
-            {/* IVA Bancario 10% Notice */}
-            <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl flex items-start gap-2 text-xs text-amber-900">
-              <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <p className="text-[11px] leading-tight">
-                <strong>Régimen Fiscal PY:</strong> Se aplica el <strong>10% de IVA</strong> exclusivamente sobre los intereses devengados de cada cuota bancaria.
-              </p>
-            </div>
+          {/* Nota breve legal */}
+          <div className="flex items-start gap-1.5 text-[10px] text-slate-400 leading-tight px-1">
+            <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+            <span>IVA bancario del 10% aplicado exclusivamente sobre los intereses proyectados.</span>
           </div>
         </div>
 
-        {/* Right Column: KPIs & Schedule Table (8 cols on lg) */}
-        <div className="lg:col-span-8 space-y-6">
-          {/* Consolidated Financial Summary (Cards) */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-            {/* Total Intereses */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                Total Intereses
-              </span>
-              <span className="text-lg sm:text-xl font-extrabold text-slate-900 mt-1 block">
-                {formatUSD(resultado.totalIntereses)}
-              </span>
-              <span className="text-[10px] text-slate-400 font-medium">Interés bancario acumulado</span>
-            </div>
+        {/* 8. Botão Único de Ação Principal em Vermelho Cotripar */}
+        <div className="pt-2 space-y-2">
+          <button
+            type="button"
+            disabled={isProcessing}
+            onClick={handleCalcularYGenerarPDF}
+            className="w-full py-3.5 bg-cotripar-700 hover:bg-cotripar-800 active:bg-cotripar-900 text-white font-extrabold rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-2 text-base transition-all disabled:opacity-60"
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Generando Proyección...</span>
+              </>
+            ) : (
+              <>
+                <FileCheck2 className="w-5 h-5" />
+                <span>CALCULAR Y GENERAR PDF</span>
+              </>
+            )}
+          </button>
 
-            {/* Total IVA 10% */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                Total IVA (10%)
-              </span>
-              <span className="text-lg sm:text-xl font-extrabold text-slate-900 mt-1 block">
-                {formatUSD(resultado.totalIva)}
-              </span>
-              <span className="text-[10px] text-slate-400 font-medium">10% s/ intereses PY</span>
-            </div>
-
-            {/* Costo Financiero Total */}
-            <div className="bg-white p-4 rounded-2xl border border-amber-200 bg-amber-50/30 shadow-sm">
-              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block">
-                Costo Financiero (CFT)
-              </span>
-              <span className="text-lg sm:text-xl font-extrabold text-amber-700 mt-1 block">
-                {formatUSD(resultado.costoFinancieroTotal)}
-              </span>
-              <span className="text-[10px] text-amber-600 font-medium">Int. + IVA + Gasto Admin</span>
-            </div>
-
-            {/* Total Pagado */}
-            <div className="bg-white p-4 rounded-2xl border border-cotripar-300 bg-cotripar-50/40 shadow-sm">
-              <span className="text-[11px] font-bold text-cotripar-800 uppercase tracking-wider block">
-                Total a Pagar
-              </span>
-              <span className="text-lg sm:text-xl font-extrabold text-cotripar-700 mt-1 block">
-                {formatUSD(resultado.totalPagado)}
-              </span>
-              <span className="text-[10px] text-cotripar-600 font-medium">Capital + Costo Financiero</span>
-            </div>
-          </div>
-
-          {/* Special Badge: Mayor Cuota Año 1 */}
-          <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-white p-4 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-                <Sparkles className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <span className="text-xs font-semibold text-amber-100 uppercase tracking-wider block">
-                  Exigibilidad de Repago Año 1
-                </span>
-                <span className="text-sm sm:text-base font-bold">
-                  Mayor Cuota Año 1: {formatUSD(resultado.cuotaMayorAnio1)}
-                </span>
-              </div>
-            </div>
-            <div className="text-xs sm:text-right bg-white/10 px-3 py-1.5 rounded-xl">
-              <span className="text-amber-100 block">Total Pagos Año 1:</span>
-              <strong className="text-white text-sm">{formatUSD(resultado.totalCuotasAnio1)}</strong>
-            </div>
-          </div>
-
-          {/* Amortization Schedule Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <span>Cronograma Detallado de Amortización</span>
-                  <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md">
-                    {resultado.cronograma.length} {frecuencia === 'semestral' ? 'semestres' : 'años'}
-                  </span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Cuotas decrecientes bajo Sistema Alemán con {resultado.tasaAnual}% anual en {resultado.bancoEntidad}.
-                </p>
-              </div>
-              <span className="text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg self-start sm:self-auto">
-                Valores en USD
-              </span>
-            </div>
-
-            <div className="overflow-x-auto custom-scrollbar">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200">
-                    <th className="py-3 px-4">Período</th>
-                    <th className="py-3 px-3 text-right">Saldo Inicial</th>
-                    <th className="py-3 px-3 text-right">Amortización</th>
-                    <th className="py-3 px-3 text-right">Interés</th>
-                    <th className="py-3 px-3 text-right">IVA (10%)</th>
-                    <th className="py-3 px-4 text-right font-extrabold text-cotripar-800 bg-cotripar-50/50">
-                      Cuota Total
-                    </th>
-                    <th className="py-3 px-4 text-right">Saldo Final</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {resultado.cronograma.map((c) => {
-                    const isMayorAnio1 = c.anio === 1 && Math.abs(c.cuota - resultado.cuotaMayorAnio1) < 0.5;
-                    return (
-                      <tr
-                        key={c.periodo}
-                        className={`hover:bg-slate-50/80 transition-colors ${
-                          isMayorAnio1 ? 'bg-amber-50/60 font-semibold' : ''
-                        }`}
-                      >
-                        <td className="py-3 px-4 font-bold text-slate-800 flex items-center gap-1.5">
-                          <span>{c.label}</span>
-                          {isMayorAnio1 && (
-                            <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-amber-500 text-white rounded-md shrink-0">
-                              ★ Mayor Año 1
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-right text-slate-600">{formatUSD(c.saldoInicial)}</td>
-                        <td className="py-3 px-3 text-right text-slate-800 font-semibold">{formatUSD(c.amortizacion)}</td>
-                        <td className="py-3 px-3 text-right text-slate-600">{formatUSD(c.interes)}</td>
-                        <td className="py-3 px-3 text-right text-slate-500">{formatUSD(c.iva)}</td>
-                        <td className="py-3 px-4 text-right font-bold text-cotripar-700 bg-cotripar-50/40 text-sm">
-                          {formatUSD(c.cuota)}
-                        </td>
-                        <td className="py-3 px-4 text-right text-slate-600">{formatUSD(c.saldoFinal)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
-                    <td className="py-3 px-4 uppercase text-[11px] tracking-wider">TOTALES</td>
-                    <td className="py-3 px-3 text-right">-</td>
-                    <td className="py-3 px-3 text-right">{formatUSD(resultado.capital)}</td>
-                    <td className="py-3 px-3 text-right">{formatUSD(resultado.totalIntereses)}</td>
-                    <td className="py-3 px-3 text-right">{formatUSD(resultado.totalIva)}</td>
-                    <td className="py-3 px-4 text-right text-cotripar-800 text-sm bg-cotripar-100/50">
-                      {formatUSD(resultado.totalCuotas)}
-                    </td>
-                    <td className="py-3 px-4 text-right">$ 0</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={handleReset}
+              className="text-xs text-slate-400 hover:text-slate-600 font-semibold inline-flex items-center gap-1 transition-colors py-1 px-2"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Restablecer Parámetros</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Save Simulation Modal */}
-      {showSaveModal && (
+      {/* Success Modal with PDF Links */}
+      {successModalData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Save className="w-5 h-5 text-cotripar-700" />
-                Guardar Simulación en Supabase
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 rounded-2xl bg-cotripar-100 text-cotripar-700 flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-7 h-7" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">
+                ¡Proyección Generada con Éxito!
               </h3>
-              <button
-                onClick={() => setShowSaveModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
-              >
-                ✕
-              </button>
+              <p className="text-xs text-slate-500">
+                El cálculo bajo el Sistema Alemán fue procesado y guardado en el historial de Cotripar.
+              </p>
             </div>
 
-            <p className="text-xs text-slate-500">
-              Esta simulación se registrará de forma persistente en la tabla <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700">simulaciones_pdf</code> vinculada a tu cuenta de usuario.
-            </p>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Nombre del Cliente o Razón Social *
-                </label>
-                <input
-                  type="text"
-                  value={clienteNombre}
-                  onChange={(e) => setClienteNombre(e.target.value)}
-                  placeholder="Ej: Agropecuaria Santa Rita S.A."
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-cotripar-600 focus:outline-none"
-                />
+            {/* Quick KPI Snapshot */}
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1.5 font-medium">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Cliente / Solicitante:</span>
+                <span className="font-bold text-slate-900">{successModalData.cliente}</span>
               </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  RUC o Cédula de Identidad (Paraguay)
-                </label>
-                <input
-                  type="text"
-                  value={clienteRuc}
-                  onChange={(e) => setClienteRuc(e.target.value)}
-                  placeholder="Ej: 80034921-5"
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-cotripar-600 focus:outline-none"
-                />
+              <div className="flex justify-between">
+                <span className="text-slate-500">Capital Solicitado:</span>
+                <span className="font-extrabold text-slate-900">{formatUSD(successModalData.resultado.capital)}</span>
               </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Notas u Observaciones del Crédito
-                </label>
-                <textarea
-                  value={notas}
-                  onChange={(e) => setNotas(e.target.value)}
-                  rows={2}
-                  placeholder="Ej: Compra de Cosechadora New Holland TC5090 con entrega a zafra..."
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-cotripar-600 focus:outline-none"
-                />
+              <div className="flex justify-between">
+                <span className="text-slate-500">Banco / Tasa:</span>
+                <span className="font-semibold text-slate-800">{successModalData.banco} ({successModalData.resultado.tasaAnual}%)</span>
               </div>
-
-              {/* Summary snapshot */}
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Capital Solicitado:</span>
-                  <span className="font-bold text-slate-800">{formatUSD(resultado.capital)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Banco / Tasa:</span>
-                  <span className="font-semibold text-slate-800">{selectedBancoNombre} ({resultado.tasaAnual}%)</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Plazo / Modalidad:</span>
-                  <span className="font-semibold text-slate-800">{resultado.plazoAnios} años ({frecuencia})</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Mayor Cuota Año 1:</span>
-                  <span className="font-bold text-amber-700">{formatUSD(resultado.cuotaMayorAnio1)}</span>
-                </div>
-                <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
-                  <span className="text-slate-700 font-bold">Total a Pagar:</span>
-                  <span className="font-extrabold text-cotripar-700">{formatUSD(resultado.totalPagado)}</span>
-                </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Mayor Cuota Año 1:</span>
+                <span className="font-bold text-cotripar-700">{formatUSD(successModalData.resultado.cuotaMayorAnio1)}</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-1.5 mt-1.5">
+                <span className="text-slate-700 font-bold">Total a Pagar:</span>
+                <span className="font-black text-cotripar-700 text-sm">
+                  {formatUSD(successModalData.resultado.totalPagado)}
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-2">
               <button
                 type="button"
-                onClick={() => setShowSaveModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                onClick={() => {
+                  try {
+                    window.open(successModalData.pdfBlobUrl, '_blank');
+                  } catch {
+                    successModalData.docInstance.save(`Cotripar_Simulacion_${successModalData.cliente}.pdf`);
+                  }
+                }}
+                className="w-full py-2.5 px-4 bg-cotripar-700 hover:bg-cotripar-800 text-white font-bold text-xs rounded-xl shadow flex items-center justify-center gap-2 transition-all"
               >
-                Cancelar
+                <ExternalLink className="w-4 h-4" />
+                <span>Abrir / Descargar PDF nuevamente</span>
               </button>
+
               <button
                 type="button"
-                onClick={handleConfirmSave}
-                className="px-4 py-2 text-xs font-bold text-white bg-cotripar-700 hover:bg-cotripar-800 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+                onClick={() => setSuccessModalData(null)}
+                className="w-full py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-all"
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Confirmar y Guardar</span>
+                Cerrar y Nueva Consulta
               </button>
             </div>
           </div>

@@ -28,7 +28,13 @@ const DEFAULT_BANCOS = [
 ];
 
 export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast }) => {
-  const { isAdmin } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
+
+  // Strict admin guard: sellers cannot access bank manager
+  if (!currentUser || currentUser.rol !== 'admin') {
+    return null;
+  }
+
   const [bancos, setBancos] = useState<BancoTasa[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 

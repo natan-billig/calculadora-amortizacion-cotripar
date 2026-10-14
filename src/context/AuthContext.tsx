@@ -8,14 +8,12 @@ interface AuthContextType {
   isLoading: boolean;
   login: (username: string, passwordHash: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
-  switchUser: (user: AppUser) => void;
+  updateCurrentUser: (user: AppUser) => void;
   availableUsers: AppUser[];
   refreshUsers: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const STORAGE_KEY = 'cotripar_auth_user';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
@@ -38,7 +36,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('Error fetching users from Supabase:', err);
     }
 
-    // Fallback users if network or RLS delay
     const fallback: AppUser[] = [
       { id: '6aabb1d7-684b-427c-a2e2-e6e7e73ced2d', nombre: 'Miguel Abellá', username: 'miguel', rol: 'admin', activo: true },
       { id: '3b11cb0a-6d10-4675-bc55-97929ecc4731', nombre: 'Vendedor Cotripar', username: 'vendedor1', rol: 'vendedor', activo: true }
@@ -48,36 +45,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    const initAuth = async () => {
-      setIsLoading(true);
-      const users = await fetchUsers();
-
-      // Check localStorage for saved session
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          const found = users.find(u => u.username === parsed.username);
-          if (found) {
-            setCurrentUser(found);
-            setIsLoading(false);
-            return;
-          }
-        } catch {
-          // ignore error
-        }
-      }
-
-      // Default to Miguel Abellá (Admin)
-      const defaultUser = users.find(u => u.username === 'miguel') || users[0];
-      if (defaultUser) {
-        setCurrentUser(defaultUser);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultUser));
-      }
+    // ALWAYS start logged out - require active login every session
+    try {
+      localStorage.removeItem('cotripar_auth_user');
+      sessionStorage.removeItem('cotripar_auth_user');
+    } catch {
+      // ignore
+    }
+    setCurrentUser(null);
+    fetchUsers().finally(() => {
       setIsLoading(false);
-    };
-
-    initAuth();
+    });
   }, []);
 
   const login = async (username: string, passwordHash: string): Promise<{ success: boolean; error?: string }> => {
@@ -107,7 +85,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       setCurrentUser(user);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
       return { success: true };
     } catch {
       return { success: false, error: 'Error de conexión con el servidor.' };
@@ -115,13 +92,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    localStorage.removeItem(STORAGE_KEY);
+    try {
+      localStorage.removeItem('cotripar_auth_user');
+      sessionStorage.removeItem('cotripar_auth_user');
+    } catch {
+      // ignore
+    }
     setCurrentUser(null);
   };
 
-  const switchUser = (user: AppUser) => {
+  const updateCurrentUser = (user: AppUser) => {
     setCurrentUser(user);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
   };
 
   const refreshUsers = async () => {
@@ -136,7 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         login,
         logout,
-        switchUser,
+        updateCurrentUser,
         availableUsers,
         refreshUsers
       }}
