@@ -1,11 +1,23 @@
-export const APP_VERSION = 'V.1.8';
+export const APP_VERSION = 'V.1.9';
 
 export interface ItemMaquinaria {
   id: string;
+  marca?: string;
   descripcion: string;
   cantidad: number;
   precioUnitarioUSD: number;
 }
+
+export interface MarcaProducto {
+  id: string;
+  nombre: string;
+  activo: boolean;
+  created_at?: string;
+}
+
+export type TipoFinanciacion = 'BANCARIA' | 'F_COTRIPAR';
+export type PeriodicidadCotripar = 'mensual' | 'semestral_zafra' | 'pago_unico';
+export type EsquemaSemestralCotripar = 'amortizacion_constante' | 'interes_primero';
 
 export type UserRole = 'admin' | 'vendedor';
 
@@ -146,6 +158,14 @@ export interface ResultadoAleman {
   maquinaImplemento?: string;
   items?: ItemMaquinaria[];
   anticipoUSD?: number;
+  tipoFinanciacion?: TipoFinanciacion;
+  mesColocacion?: string;
+  fechaTopeVencimiento?: string;
+  plazoMeses?: number;
+  tasaMensual?: number;
+  bloqueActivo?: string;
+  periodicidadCotripar?: PeriodicidadCotripar;
+  marcaProducto?: string;
 }
 
 export interface SimulacionPDF {
@@ -172,4 +192,10 @@ export interface SimulacionPDF {
   anticipo_usd?: number;
   notas?: string;
   created_at?: string;
+  tipo_financiacion?: TipoFinanciacion;
+  marca_producto?: string;
+  mes_colocacion?: string;
+  fecha_tope_vencimiento?: string;
+  plazo_meses?: number;
 }
+

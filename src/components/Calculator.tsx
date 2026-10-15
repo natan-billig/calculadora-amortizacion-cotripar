@@ -1,7 +1,26 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { BancoTasa, FrecuenciaPago, ModalidadSemestral, ResultadoAleman, SimulacionPDF, ItemMaquinaria } from '../types';
+import type {
+  BancoTasa,
+  FrecuenciaPago,
+  ModalidadSemestral,
+  ResultadoAleman,
+  SimulacionPDF,
+  ItemMaquinaria,
+  MarcaProducto,
+  TipoFinanciacion,
+  PeriodicidadCotripar,
+  EsquemaSemestralCotripar
+} from '../types';
 import { BANCOS_OFICIALES_COTRIPAR } from '../types';
-import { calcularSistemaAleman, formatUSD, formatPercent } from '../utils/calculatorEngine';
+import {
+  calcularSistemaAleman,
+  calcularFCotripar,
+  getMatrizBloqueInfo,
+  getTasaMensualCotripar,
+  MESES_MATRIZ_COTRIPAR,
+  formatUSD,
+  formatPercent
+} from '../utils/calculatorEngine';
 import { generarPDFSimulacion } from '../utils/pdfGenerator';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -22,21 +41,31 @@ import {
   Loader2,
   Tractor,
   Plus,
-  Trash2
+  Trash2,
+  Tag
 } from 'lucide-react';
 
 interface CalculatorProps {
   onOpenBankManager: () => void;
+  onOpenBrandManager?: () => void;
   showToast: (msg: string) => void;
   initialSimulation?: SimulacionPDF | null;
 }
 
 export const Calculator: React.FC<CalculatorProps> = ({
   onOpenBankManager,
+  onOpenBrandManager,
   showToast,
   initialSimulation
 }) => {
   const { currentUser, isAdmin } = useAuth();
+
+  // Mode Selection: Financiación Bancaria vs F COTRIPAR
+  const [tipoFinanciacion, setTipoFinanciacion] = useState<TipoFinanciacion>('BANCARIA');
+
+  // Marcas de Productos from Supabase
+  const [marcas, setMarcas] = useState<MarcaProducto[]>([]);
+  const [isLoadingMarcas, setIsLoadingMarcas] = useState<boolean>(true);
 
   // Inputs
   const [clienteNombre, setClienteNombre] = useState<string>('');
@@ -44,6 +73,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const [items, setItems] = useState<ItemMaquinaria[]>([
     {
       id: '1',
+      marca: 'Valtra',
       descripcion: '',
       cantidad: 1,
       precioUnitarioUSD: 110000
@@ -52,10 +82,19 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const [anticipoUSD, setAnticipoUSD] = useState<number>(0);
   const [validationTriggered, setValidationTriggered] = useState<boolean>(false);
   const [capital, setCapital] = useState<number>(110000);
+
+  // Traditional Banking Mode Inputs
   const [tasaAnual, setTasaAnual] = useState<number>(7.40);
   const [plazoAnios, setPlazoAnios] = useState<number>(5);
   const [frecuencia, setFrecuencia] = useState<FrecuenciaPago>('anual');
   const [modalidadSemestral, setModalidadSemestral] = useState<ModalidadSemestral>('zafra_interes_primero');
+
+  // F COTRIPAR Mode Inputs (Matriz 2026-2028)
+  const [mesColocacion, setMesColocacion] = useState<string>('Octubre 2026');
+  const [plazoMeses, setPlazoMeses] = useState<number>(17);
+  const [periodicidadCotripar, setPeriodicidadCotripar] = useState<PeriodicidadCotripar>('mensual');
+  const [esquemaSemestralCotripar, setEsquemaSemestralCotripar] = useState<EsquemaSemestralCotripar>('amortizacion_constante');
+
 
   // Banks from Supabase
   const [bancos, setBancos] = useState<BancoTasa[]>([]);
@@ -73,6 +112,46 @@ export const Calculator: React.FC<CalculatorProps> = ({
     docInstance: any;
     pdfBlobUrl: string;
   } | null>(null);
+
+  // Fetch Marcas from Supabase
+  const fetchMarcas = async () => {
+    setIsLoadingMarcas(true);
+    try {
+      const { data, error } = await supabase
+        .from('marcas_productos')
+        .select('*')
+        .eq('activo', true)
+        .order('nombre', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        setMarcas(data);
+        setItems((prev) =>
+          prev.map((it) => (it.marca ? it : { ...it, marca: data[0].nombre }))
+        );
+      } else {
+        const defaults: MarcaProducto[] = [
+          'Valtra',
+          'Fendt',
+          'Cotripar Implementos',
+          'Tatu Marchesan',
+          'Baldan',
+          'Stara',
+          'Jacto',
+          'Second Hand (Usados)',
+          'Posventa / Repuestos',
+          'Otras Marcas'
+        ].map((nombre, i) => ({ id: String(i + 1), nombre, activo: true }));
+        setMarcas(defaults);
+        setItems((prev) =>
+          prev.map((it) => (it.marca ? it : { ...it, marca: defaults[0].nombre }))
+        );
+      }
+    } catch {
+      // offline fallback
+    } finally {
+      setIsLoadingMarcas(false);
+    }
+  };
 
   // Fetch banks in real-time from Supabase
   const fetchBancos = async () => {
@@ -116,19 +195,56 @@ export const Calculator: React.FC<CalculatorProps> = ({
   };
 
   useEffect(() => {
+    fetchMarcas();
     fetchBancos();
   }, []);
+
+  // F COTRIPAR Block info and dynamic rate
+  const infoBloqueActivo = useMemo(() => {
+    return getMatrizBloqueInfo(mesColocacion);
+  }, [mesColocacion]);
+
+  const tasaMensualCalculada = useMemo(() => {
+    return getTasaMensualCotripar(plazoMeses);
+  }, [plazoMeses]);
+
+  const handleMesColocacionChange = (newMes: string) => {
+    setMesColocacion(newMes);
+    const info = getMatrizBloqueInfo(newMes);
+    // Por padrão, ao selecionar o Mês de Colocação, preenche com o Plazo Real Otorgado daquele mês na matriz
+    setPlazoMeses(info.plazoMaximo);
+  };
 
   // Handle re-loading simulation from history
   useEffect(() => {
     if (initialSimulation) {
-      setCapital(initialSimulation.capital_usd);
-      setTasaAnual(initialSimulation.tasa_anual);
-      setPlazoAnios(initialSimulation.plazo_anios);
-      setFrecuencia(initialSimulation.periodicidad === 'semestral' ? 'semestral' : 'anual');
-      if (initialSimulation.modalidad_semestral) {
-        setModalidadSemestral(initialSimulation.modalidad_semestral as ModalidadSemestral);
+      if (initialSimulation.tipo_financiacion === 'F_COTRIPAR') {
+        setTipoFinanciacion('F_COTRIPAR');
+        if (initialSimulation.mes_colocacion) {
+          setMesColocacion(initialSimulation.mes_colocacion);
+        }
+        if (initialSimulation.plazo_meses) {
+          setPlazoMeses(initialSimulation.plazo_meses);
+        }
+        if (initialSimulation.periodicidad) {
+          setPeriodicidadCotripar(initialSimulation.periodicidad as PeriodicidadCotripar);
+        }
+        if (initialSimulation.modalidad_semestral) {
+          setEsquemaSemestralCotripar(initialSimulation.modalidad_semestral as EsquemaSemestralCotripar);
+        }
+      } else {
+        setTipoFinanciacion('BANCARIA');
+        setTasaAnual(initialSimulation.tasa_anual);
+        setPlazoAnios(initialSimulation.plazo_anios);
+        setFrecuencia(initialSimulation.periodicidad === 'semestral' ? 'semestral' : 'anual');
+        if (initialSimulation.modalidad_semestral) {
+          setModalidadSemestral(initialSimulation.modalidad_semestral as ModalidadSemestral);
+        }
+        const bFound = bancos.find(b => b.entidad.toLowerCase() === initialSimulation.banco_entidad.toLowerCase());
+        if (bFound) setSelectedBancoId(bFound.id);
       }
+
+      setCapital(initialSimulation.capital_usd);
       setClienteNombre(initialSimulation.cliente_nombre || '');
       setClienteRuc(initialSimulation.cliente_ruc || '');
       if (initialSimulation.items_json && Array.isArray(initialSimulation.items_json) && initialSimulation.items_json.length > 0) {
@@ -137,6 +253,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
         setItems([
           {
             id: '1',
+            marca: initialSimulation.marca_producto || 'Valtra',
             descripcion: initialSimulation.maquina_implemento || '',
             cantidad: 1,
             precioUnitarioUSD: Number(initialSimulation.capital_usd) + (Number(initialSimulation.anticipo_usd) || 0)
@@ -144,8 +261,6 @@ export const Calculator: React.FC<CalculatorProps> = ({
         ]);
       }
       setAnticipoUSD(Number(initialSimulation.anticipo_usd) || 0);
-      const bFound = bancos.find(b => b.entidad.toLowerCase() === initialSimulation.banco_entidad.toLowerCase());
-      if (bFound) setSelectedBancoId(bFound.id);
       showToast(`Simulación de "${initialSimulation.cliente_nombre}" cargada.`);
     }
   }, [initialSimulation]);
@@ -217,6 +332,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       ...prev,
       {
         id: Date.now().toString(),
+        marca: marcas[0]?.nombre || 'Valtra',
         descripcion: '',
         cantidad: 1,
         precioUnitarioUSD: 0
@@ -242,6 +358,18 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
   // Real-time calculation
   const resultado: ResultadoAleman = useMemo(() => {
+    if (tipoFinanciacion === 'F_COTRIPAR') {
+      return calcularFCotripar(
+        capital,
+        mesColocacion,
+        plazoMeses,
+        periodicidadCotripar,
+        esquemaSemestralCotripar,
+        undefined,
+        items,
+        anticipoUSD
+      );
+    }
     return calcularSistemaAleman(
       capital,
       tasaAnual,
@@ -250,7 +378,21 @@ export const Calculator: React.FC<CalculatorProps> = ({
       modalidadSemestral,
       selectedBancoNombre
     );
-  }, [capital, tasaAnual, plazoAnios, frecuencia, modalidadSemestral, selectedBancoNombre]);
+  }, [
+    tipoFinanciacion,
+    capital,
+    tasaAnual,
+    plazoAnios,
+    frecuencia,
+    modalidadSemestral,
+    selectedBancoNombre,
+    mesColocacion,
+    plazoMeses,
+    periodicidadCotripar,
+    esquemaSemestralCotripar,
+    items,
+    anticipoUSD
+  ]);
 
   const capitalPresets = [25000, 50000, 75000, 110000, 150000, 200000];
 
@@ -260,6 +402,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
     setItems([
       {
         id: '1',
+        marca: marcas[0]?.nombre || 'Valtra',
         descripcion: '',
         cantidad: 1,
         precioUnitarioUSD: 110000
@@ -271,6 +414,11 @@ export const Calculator: React.FC<CalculatorProps> = ({
     setPlazoAnios(5);
     setFrecuencia('anual');
     setModalidadSemestral('zafra_interes_primero');
+    setTipoFinanciacion('BANCARIA');
+    setMesColocacion('Octubre 2026');
+    setPlazoMeses(17);
+    setPeriodicidadCotripar('mensual');
+    setEsquemaSemestralCotripar('amortizacion_constante');
     if (bancos.length > 0) {
       setSelectedBancoId(bancos[0].id);
       const defaultRate = bancos[0].tasas_por_plazo?.[5] ?? Number(bancos[0].tasa_anual);
@@ -283,14 +431,20 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const handleCalcularYGenerarPDF = async () => {
     const hasValidItems =
       items.length > 0 &&
-      items.some((it) => it.descripcion.trim() !== '' && Number(it.precioUnitarioUSD) > 0);
+      items.every(
+        (it) =>
+          it.descripcion.trim() !== '' &&
+          Number(it.precioUnitarioUSD) > 0 &&
+          it.marca &&
+          it.marca.trim() !== ''
+      );
 
     if (!clienteNombre.trim() || !clienteRuc.trim() || !hasValidItems) {
       setValidationTriggered(true);
       if (!clienteNombre.trim() || !clienteRuc.trim()) {
         showToast('Es obligatorio ingresar el Nombre del Cliente y RUC / C.I.');
       } else {
-        showToast('Debe ingresar al menos un equipo cotizado con descripción y precio válido.');
+        showToast('Debe ingresar Marca, Descripción y Precio Unitario válido para cada equipo cotizado.');
       }
       return;
     }
@@ -303,10 +457,17 @@ export const Calculator: React.FC<CalculatorProps> = ({
     setIsProcessing(true);
     const clienteFinal = clienteNombre.trim();
     const rucFinal = clienteRuc.trim();
+
+    const marcasList = Array.from(new Set(items.map((it) => it.marca?.trim()).filter(Boolean)));
+    const marcaProductoPrincipal = marcasList.join(', ') || (marcas[0]?.nombre || 'Cotripar');
+
     const maquinaFinal =
       items
         .filter((it) => it.descripcion.trim())
-        .map((it) => `${it.cantidad > 1 ? `${it.cantidad}x ` : ''}${it.descripcion.trim()}`)
+        .map(
+          (it) =>
+            `${it.marca ? `[${it.marca}] ` : ''}${it.cantidad > 1 ? `${it.cantidad}x ` : ''}${it.descripcion.trim()}`
+        )
         .join(' + ') || 'Equipamiento Agrícola Cotripar';
 
     const simulacionPayload: SimulacionPDF = {
@@ -317,11 +478,11 @@ export const Calculator: React.FC<CalculatorProps> = ({
       maquina_implemento: maquinaFinal,
       capital_usd: resultado.capital,
       gasto_admin_usd: resultado.gastoAdmin,
-      banco_entidad: selectedBancoNombre,
+      banco_entidad: tipoFinanciacion === 'F_COTRIPAR' ? 'F COTRIPAR (Financiación Propia)' : selectedBancoNombre,
       tasa_anual: resultado.tasaAnual,
       plazo_anios: resultado.plazoAnios,
-      periodicidad: resultado.frecuencia,
-      modalidad_semestral: resultado.modalidadSemestral || null,
+      periodicidad: tipoFinanciacion === 'F_COTRIPAR' ? periodicidadCotripar : resultado.frecuencia,
+      modalidad_semestral: tipoFinanciacion === 'F_COTRIPAR' ? esquemaSemestralCotripar : (resultado.modalidadSemestral || null),
       total_intereses_usd: resultado.totalIntereses,
       total_iva_usd: resultado.totalIva,
       costo_financiero_total_usd: resultado.costoFinancieroTotal,
@@ -329,7 +490,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
       mayor_cuota_anio1_usd: resultado.cuotaMayorAnio1,
       cronograma_json: resultado.cronograma,
       items_json: items,
-      anticipo_usd: anticipoUSD
+      anticipo_usd: anticipoUSD,
+      tipo_financiacion: tipoFinanciacion,
+      marca_producto: marcaProductoPrincipal,
+      mes_colocacion: tipoFinanciacion === 'F_COTRIPAR' ? infoBloqueActivo.mesNombre : '',
+      fecha_tope_vencimiento: tipoFinanciacion === 'F_COTRIPAR' ? infoBloqueActivo.fechaTopeVencimiento : '',
+      plazo_meses: tipoFinanciacion === 'F_COTRIPAR' ? plazoMeses : plazoAnios * 12
     };
 
     try {
@@ -347,7 +513,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
       // Trigger automatic file download
       const safeName = clienteFinal.replace(/\s+/g, '_');
       const safeRuc = rucFinal.replace(/\s+/g, '');
-      const filename = `Cotripar_Simulacion_${safeName}_${safeRuc}.pdf`;
+      const prefix = tipoFinanciacion === 'F_COTRIPAR' ? 'Cotripar_FCOTRIPAR' : 'Cotripar_Simulacion';
+      const filename = `${prefix}_${safeName}_${safeRuc}.pdf`;
       doc.save(filename);
 
       // 2. Save in background to Supabase
@@ -384,6 +551,35 @@ export const Calculator: React.FC<CalculatorProps> = ({
     <div className="py-2 sm:py-6">
       {/* Centralized Card (Mobile & Desktop Perfect) */}
       <div className="max-w-xl mx-auto w-full bg-white p-5 sm:p-7 rounded-3xl border border-slate-200 shadow-md space-y-5">
+        {/* Mode Selector: Financiación Bancaria vs F COTRIPAR */}
+        <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-100 rounded-2xl border border-slate-200">
+          <button
+            type="button"
+            onClick={() => setTipoFinanciacion('BANCARIA')}
+            className={`py-3 px-3 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all ${
+              tipoFinanciacion === 'BANCARIA'
+                ? 'bg-white text-slate-900 shadow-md border border-slate-200/80 scale-[1.01]'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+            }`}
+          >
+            <Building2 className={`w-4 h-4 ${tipoFinanciacion === 'BANCARIA' ? 'text-cotripar-700' : 'text-slate-400'}`} />
+            <span>🏦 Financiación Bancaria</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTipoFinanciacion('F_COTRIPAR')}
+            className={`py-3 px-3 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all ${
+              tipoFinanciacion === 'F_COTRIPAR'
+                ? 'bg-cotripar-700 text-white shadow-md shadow-cotripar-700/20 scale-[1.01]'
+                : 'text-slate-500 hover:text-cotripar-700 hover:bg-slate-200/50'
+            }`}
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-red-400 animate-pulse" />
+            <span>🔴 F COTRIPAR</span>
+          </button>
+        </div>
+
         {/* Card Header */}
         <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
           <div className="flex items-center gap-2">
@@ -392,10 +588,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight">
-                Parámetros del Crédito
+                {tipoFinanciacion === 'F_COTRIPAR' ? 'Financiación Propia F COTRIPAR' : 'Parámetros del Crédito'}
               </h2>
               <p className="text-[11px] text-slate-400 font-medium">
-                Sistema Alemán de Amortización • Cotripar S.A.
+                {tipoFinanciacion === 'F_COTRIPAR'
+                  ? 'Matriz Oficial de Bloques y Plazos (Ciclo 2026 - 2028)'
+                  : 'Sistema Alemán de Amortización • Cotripar S.A.'}
               </p>
             </div>
           </div>
@@ -447,16 +645,29 @@ export const Calculator: React.FC<CalculatorProps> = ({
             </div>
           </div>
 
-          {/* Campo: Lista Dinámica de Equipos / Ítems Cotizados (V.1.7) */}
+          {/* Campo: Lista Dinámica de Equipos / Ítems Cotizados con Marca Configurable */}
           <div className="space-y-2.5 pt-1">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                 <Tractor className="w-3.5 h-3.5 text-cotripar-700" />
                 <span>Equipos o Implementos Cotizados *</span>
               </label>
-              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                {items.length} {items.length === 1 ? 'equipo' : 'equipos'}
-              </span>
+              <div className="flex items-center gap-2">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={onOpenBrandManager}
+                    className="text-[11px] font-bold text-cotripar-700 hover:underline flex items-center gap-1 bg-cotripar-50 px-2 py-0.5 rounded-lg border border-cotripar-200 transition-colors"
+                    title="Gestionar Marcas de Productos"
+                  >
+                    <Tag className="w-3 h-3 text-cotripar-700" />
+                    <span>🏷️ Gestionar Marcas</span>
+                  </button>
+                )}
+                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                  {items.length} {items.length === 1 ? 'equipo' : 'equipos'}
+                </span>
+              </div>
             </div>
 
             {/* List of equipment items */}
@@ -466,7 +677,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 return (
                   <div
                     key={item.id}
-                    className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 relative transition-all"
+                    className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5 relative transition-all"
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-extrabold text-cotripar-700 uppercase tracking-wider flex items-center gap-1">
@@ -485,20 +696,46 @@ export const Calculator: React.FC<CalculatorProps> = ({
                       )}
                     </div>
 
-                    {/* Descripción del Equipo */}
-                    <div>
-                      <input
-                        type="text"
-                        required
-                        value={item.descripcion}
-                        onChange={(e) => handleItemChange(item.id, 'descripcion', e.target.value)}
-                        placeholder="Ej: Tractor Agrícola 4x4 - 180 HP / Sembradora"
-                        className={`w-full px-3 py-2 text-xs font-medium text-slate-900 bg-white border rounded-xl focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all ${
-                          validationTriggered && !item.descripcion.trim()
-                            ? 'border-red-500 bg-red-50/40 ring-1 ring-red-400'
-                            : 'border-slate-200'
-                        }`}
-                      />
+                    {/* Coluna 1: Marca * y Coluna 2: Descripción * */}
+                    <div className="grid grid-cols-12 gap-2">
+                      <div className="col-span-12 sm:col-span-4 space-y-0.5">
+                        <label className="text-[10px] font-bold text-slate-500 block">Marca *</label>
+                        <select
+                          value={item.marca || ''}
+                          onChange={(e) => handleItemChange(item.id, 'marca', e.target.value)}
+                          disabled={isLoadingMarcas}
+                          className={`w-full px-2.5 py-2 text-xs font-bold text-slate-900 bg-white border rounded-xl focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all ${
+                            validationTriggered && (!item.marca || !item.marca.trim())
+                              ? 'border-red-500 bg-red-50/40 ring-1 ring-red-400'
+                              : 'border-slate-200'
+                          }`}
+                        >
+                          <option value="">-- Seleccionar Marca --</option>
+                          {marcas.map((m) => (
+                            <option key={m.id} value={m.nombre}>
+                              {m.nombre}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="col-span-12 sm:col-span-8 space-y-0.5">
+                        <label className="text-[10px] font-bold text-slate-500 block">
+                          Descripción del Equipo / Implemento *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={item.descripcion}
+                          onChange={(e) => handleItemChange(item.id, 'descripcion', e.target.value)}
+                          placeholder="Ej: Tractor BH224 / Sembradora / Cosechadora"
+                          className={`w-full px-3 py-2 text-xs font-medium text-slate-900 bg-white border rounded-xl focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all ${
+                            validationTriggered && !item.descripcion.trim()
+                              ? 'border-red-500 bg-red-50/40 ring-1 ring-red-400'
+                              : 'border-slate-200'
+                          }`}
+                        />
+                      </div>
                     </div>
 
                     {/* Cantidad y Precio Unitario */}
@@ -664,203 +901,425 @@ export const Calculator: React.FC<CalculatorProps> = ({
             </div>
           </div>
 
-          {/* 3. Entidad Bancaria (Paraguay) - Sin tasa en la etiqueta de la opción */}
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                <span>Entidad Bancaria (Paraguay)</span>
-              </label>
-              {/* Oculto estrictamente para vendedores; solo visible para admin */}
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={onOpenBankManager}
-                  className="text-[11px] font-bold text-cotripar-700 hover:underline"
-                >
-                  ⚙️ Gestionar Tasas
-                </button>
-              )}
-            </div>
-            <select
-              value={selectedBancoId}
-              onChange={(e) => handleBankChange(e.target.value)}
-              disabled={isLoadingBancos}
-              className="w-full px-3.5 py-2.5 text-sm font-semibold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
-            >
-              {bancos.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.entidad}
-                </option>
-              ))}
-            </select>
-          </div>
+          {tipoFinanciacion === 'F_COTRIPAR' ? (
+            <>
+              {/* A. Mes de Colocación y Badge de Matriz Operativa de Plazos y Bloques */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-cotripar-700" />
+                    <span>Mes de Colocación (Matriz 2026 - 2028) *</span>
+                  </label>
+                  <span className="text-[11px] font-bold text-cotripar-700 bg-cotripar-50 px-2 py-0.5 rounded-full border border-cotripar-200">
+                    {infoBloqueActivo.bloque}
+                  </span>
+                </div>
 
-          {/* 4. Tasa de Interés Anual (%) */}
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Percent className="w-3.5 h-3.5 text-slate-400" />
-                <span>Tasa de Interés Anual (%)</span>
-              </label>
-              <span className="text-xs font-bold text-slate-500">
-                {formatPercent(tasaAnual)}
-              </span>
-            </div>
-            <div className="relative">
-              <input
-                type="number"
-                min="0.1"
-                max="100"
-                step="0.05"
-                value={tasaAnual || ''}
-                onChange={(e) => setTasaAnual(Math.max(0, parseFloat(e.target.value) || 0))}
-                className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
-                placeholder="7.40"
-              />
-              <span className="absolute right-3.5 top-2.5 text-xs text-slate-400 font-bold">%</span>
-            </div>
-          </div>
-
-          {/* 5. Plazo del Financiamiento (1 a 6 años) con tasas automáticas por banco */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span>Plazo del Financiamiento</span>
-              </label>
-              <span className="text-cotripar-700 font-black text-xs">
-                {plazoAnios} {plazoAnios === 1 ? 'Año' : 'Años'}
-              </span>
-            </div>
-            <div className="grid grid-cols-6 gap-1.5">
-              {[1, 2, 3, 4, 5, 6].map((p) => {
-                const currentBank = bancos.find(b => b.id === selectedBancoId);
-                const rateForP = currentBank?.tasas_por_plazo ? currentBank.tasas_por_plazo[String(p)] : null;
-                const isConfigured = currentBank?.tasas_por_plazo ? rateForP != null : true;
-                const isSelected = plazoAnios === p;
-
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => handlePlazoChange(p)}
-                    className={`py-2 px-1 text-xs font-extrabold rounded-xl border transition-all flex flex-col items-center justify-center ${
-                      isSelected
-                        ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
-                        : isConfigured
-                        ? 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        : 'bg-slate-100/50 text-slate-400 border-dashed border-slate-200 hover:bg-slate-100/80'
-                    }`}
-                    title={isConfigured ? `Tasa según tabla: ${rateForP}%` : 'Plazo sin tasa de tabla en este banco'}
-                  >
-                    <span>{p}a</span>
-                    {rateForP != null ? (
-                      <span className={`text-[9px] font-semibold mt-0.5 ${isSelected ? 'text-cotripar-100' : 'text-slate-500'}`}>
-                        {Number(rateForP).toFixed(2)}%
-                      </span>
-                    ) : (
-                      currentBank?.tasas_por_plazo && (
-                        <span className={`text-[9px] font-normal mt-0.5 ${isSelected ? 'text-cotripar-200' : 'text-slate-300'}`}>
-                          s/tasa
-                        </span>
-                      )
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Advertencia o indicador de ajuste automático según tabla del banco */}
-            {(() => {
-              const currentBank = bancos.find(b => b.id === selectedBancoId);
-              const rateForCurrent = currentBank?.tasas_por_plazo ? currentBank.tasas_por_plazo[String(plazoAnios)] : null;
-              if (currentBank?.tasas_por_plazo && rateForCurrent == null) {
-                return (
-                  <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 font-medium">
-                    ⚠️ Plazo sin tasa de tabla en este banco — ingrese tasa manual si aplica
-                  </p>
-                );
-              }
-              if (rateForCurrent != null) {
-                return (
-                  <p className="text-[10px] text-slate-500 flex items-center gap-1 font-medium">
-                    <span>💡 Tasa ajustada automáticamente a <strong>{Number(rateForCurrent).toFixed(2)}%</strong> para {plazoAnios} {plazoAnios === 1 ? 'año' : 'años'} ({currentBank?.entidad}).</span>
-                  </p>
-                );
-              }
-              return null;
-            })()}
-          </div>
-
-          {/* 6. Periodicidad de Amortización */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 block">
-              Periodicidad de Amortización
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setFrecuencia('anual')}
-                className={`py-2.5 px-3 text-xs font-bold rounded-xl border transition-all text-center ${
-                  frecuencia === 'anual'
-                    ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                Anual (1 cuota/año)
-              </button>
-              <button
-                type="button"
-                onClick={() => setFrecuencia('semestral')}
-                className={`py-2.5 px-3 text-xs font-bold rounded-xl border transition-all text-center ${
-                  frecuencia === 'semestral'
-                    ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                Semestral (2 cuotas/año)
-              </button>
-            </div>
-
-            {/* Modalidad Semestral */}
-            {frecuencia === 'semestral' && (
-              <div className="mt-2 p-3 bg-cotripar-50/70 border border-cotripar-200 rounded-xl animate-in fade-in space-y-1.5">
-                <label className="text-xs font-bold text-cotripar-900 flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5 text-cotripar-700" />
-                  <span>Modalidad Semestral</span>
-                </label>
                 <select
-                  value={modalidadSemestral}
-                  onChange={(e) => setModalidadSemestral(e.target.value as ModalidadSemestral)}
-                  className="w-full px-3 py-2 text-xs font-bold text-slate-900 bg-white border border-cotripar-300 rounded-lg focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+                  value={mesColocacion}
+                  onChange={(e) => handleMesColocacionChange(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-sm font-semibold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
                 >
-                  <option value="zafra_interes_primero">
-                    Zafra (1° sem solo interés, 2° sem cap + int)
-                  </option>
-                  <option value="constante">
-                    Constante Semestral (Capital uniforme)
-                  </option>
+                  {MESES_MATRIZ_COTRIPAR.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
                 </select>
-                <p className="text-[10px] text-cotripar-800">
-                  {modalidadSemestral === 'zafra_interes_primero'
-                    ? '🌾 Esquema Zafra: cuota de interés en siembra y amortización principal en cosecha.'
-                    : '⚖️ Amortización constante: el capital se divide equitativamente en todos los semestres.'}
-                </p>
-              </div>
-            )}
-          </div>
 
-          {/* 7. Resumen Compacto: Gasto Administrativo */}
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
-            <div>
-              <span className="font-bold text-slate-700 block">Gasto Administrativo (1%):</span>
-              <span className="text-[10px] text-slate-400">Cálculo automático s/ capital</span>
-            </div>
-            <span className="font-extrabold text-slate-900 text-sm">
-              {formatUSD(resultado.gastoAdmin)}
-            </span>
-          </div>
+                {/* Badge Informativo de Destaque */}
+                <div className="p-3 bg-red-50/70 border border-red-200 rounded-2xl space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="text-cotripar-900 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-cotripar-600 animate-pulse" />
+                      <span>Bloque Activo: <strong>{infoBloqueActivo.bloque}</strong></span>
+                    </span>
+                    <span className="bg-cotripar-700 text-white px-2.5 py-0.5 rounded-full text-[10px] font-black">
+                      Plazo Máx: {infoBloqueActivo.plazoMaximo} Meses
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-red-100/80">
+                    <span className="text-slate-600 text-[11px] font-medium">Fecha Tope de Vencimiento:</span>
+                    <span className="font-extrabold text-cotripar-800 font-mono text-xs bg-white px-2.5 py-0.5 rounded-lg border border-red-200 shadow-xs">
+                      📅 {infoBloqueActivo.fechaTopeVencimiento}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* B. Plazo en Meses (1 hasta el Plazo Máximo del Mes) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Plazo Otorgado en Meses (1 a {infoBloqueActivo.plazoMaximo}m)</span>
+                  </label>
+                  <span className="text-cotripar-700 font-black text-xs bg-cotripar-50 px-2 py-0.5 rounded-lg border border-cotripar-200">
+                    {plazoMeses} {plazoMeses === 1 ? 'Mes' : 'Meses'}
+                  </span>
+                </div>
+
+                {/* Quick Buttons */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  {Array.from(new Set([6, 9, 12, infoBloqueActivo.plazoMaximo]))
+                    .filter((m) => m <= infoBloqueActivo.plazoMaximo)
+                    .map((m) => {
+                      const isSelected = plazoMeses === m;
+                      const isTope = m === infoBloqueActivo.plazoMaximo;
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setPlazoMeses(m)}
+                          className={`py-2 px-1 text-xs font-extrabold rounded-xl border transition-all text-center flex flex-col items-center justify-center ${
+                            isSelected
+                              ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>{m}m</span>
+                          <span className={`text-[9px] font-semibold ${isSelected ? 'text-cotripar-100' : 'text-slate-400'}`}>
+                            {isTope ? 'Plazo Tope' : `${m <= 12 ? '0.60%' : '0.80%'}`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
+
+                <div className="pt-1">
+                  <input
+                    type="range"
+                    min="1"
+                    max={infoBloqueActivo.plazoMaximo}
+                    step="1"
+                    value={plazoMeses}
+                    onChange={(e) => setPlazoMeses(parseInt(e.target.value, 10))}
+                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cotripar-700"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400 font-bold px-0.5">
+                    <span>1m</span>
+                    <span>6m</span>
+                    <span>12m (0.60%)</span>
+                    <span>Tope: {infoBloqueActivo.plazoMaximo}m ({infoBloqueActivo.plazoMaximo <= 12 ? '0.60%' : '0.80%'})</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* C. Tasa de Interés Mensual Automática (0.60% vs 0.80%) */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Percent className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Tasa de Interés Mensual (%)</span>
+                  </label>
+                  <span className="text-xs font-black text-cotripar-700 bg-cotripar-50 px-2.5 py-1 rounded-lg border border-cotripar-200">
+                    {tasaMensualCalculada.toFixed(2)}% mensual
+                  </span>
+                </div>
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs font-medium">
+                  <span className="text-slate-700 font-semibold">
+                    {plazoMeses <= 12
+                      ? '⚡ 0.60% mensual (Plazo hasta 12 meses)'
+                      : '⚡ 0.80% mensual (Plazo de 13 a 18 meses)'}
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                    Eq. {plazoMeses <= 12 ? '7.20%' : '9.60%'} nom. anual
+                  </span>
+                </div>
+              </div>
+
+              {/* D. Periodicidad / Modalidad de Pago en F COTRIPAR */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Periodicidad / Modalidad de Pago
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPeriodicidadCotripar('mensual')}
+                    className={`py-2 px-1 text-xs font-bold rounded-xl border text-center transition-all ${
+                      periodicidadCotripar === 'mensual'
+                        ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Mensual ({plazoMeses}c)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPeriodicidadCotripar('semestral_zafra')}
+                    className={`py-2 px-1 text-xs font-bold rounded-xl border text-center transition-all ${
+                      periodicidadCotripar === 'semestral_zafra'
+                        ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Semestral / Zafra
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPeriodicidadCotripar('pago_unico')}
+                    className={`py-2 px-1 text-xs font-bold rounded-xl border text-center transition-all ${
+                      periodicidadCotripar === 'pago_unico'
+                        ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Pago Único
+                  </button>
+                </div>
+
+                {/* Sub-opciones para Semestral / Zafra */}
+                {periodicidadCotripar === 'semestral_zafra' && (
+                  <div className="mt-2 p-3 bg-cotripar-50/70 border border-cotripar-200 rounded-xl animate-in fade-in space-y-1.5">
+                    <label className="text-xs font-bold text-cotripar-900 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-cotripar-700" />
+                      <span>Esquema de Cuotas Semestrales</span>
+                    </label>
+                    <select
+                      value={esquemaSemestralCotripar}
+                      onChange={(e) => setEsquemaSemestralCotripar(e.target.value as EsquemaSemestralCotripar)}
+                      className="w-full px-3 py-2 text-xs font-bold text-slate-900 bg-white border border-cotripar-300 rounded-lg focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+                    >
+                      <option value="amortizacion_constante">
+                        Cuotas Semestrales Iguales de Capital (Uniforme)
+                      </option>
+                      <option value="interes_primero">
+                        Zafra: Interés Primero + Capital al Vencimiento Final
+                      </option>
+                    </select>
+                    <p className="text-[10px] text-cotripar-800">
+                      {esquemaSemestralCotripar === 'interes_primero'
+                        ? '🌾 Cuotas semestrales intermedias de solo interés; 100% de capital al vencimiento final en la Fecha Tope.'
+                        : '⚖️ Amortización de capital distribuida uniformemente en cada período semestral hasta la Fecha Tope.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* E. Gasto Administrativo: 0% Exento */}
+              <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-extrabold text-emerald-900 block">Gasto Administrativo:</span>
+                  <span className="text-[10px] text-emerald-700">0% Exento en Financiación Propia F COTRIPAR</span>
+                </div>
+                <span className="font-black text-emerald-800 text-sm">
+                  $ 0 (Exento)
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* 3. Entidad Bancaria (Paraguay) - Sin tasa en la etiqueta de la opción */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Entidad Bancaria (Paraguay)</span>
+                  </label>
+                  {/* Oculto estrictamente para vendedores; solo visible para admin */}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={onOpenBankManager}
+                      className="text-[11px] font-bold text-cotripar-700 hover:underline"
+                    >
+                      ⚙️ Gestionar Tasas
+                    </button>
+                  )}
+                </div>
+                <select
+                  value={selectedBancoId}
+                  onChange={(e) => handleBankChange(e.target.value)}
+                  disabled={isLoadingBancos}
+                  className="w-full px-3.5 py-2.5 text-sm font-semibold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
+                >
+                  {bancos.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.entidad}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 4. Tasa de Interés Anual (%) */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Percent className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Tasa de Interés Anual (%)</span>
+                  </label>
+                  <span className="text-xs font-bold text-slate-500">
+                    {formatPercent(tasaAnual)}
+                  </span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="100"
+                    step="0.05"
+                    value={tasaAnual || ''}
+                    onChange={(e) => setTasaAnual(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
+                    placeholder="7.40"
+                  />
+                  <span className="absolute right-3.5 top-2.5 text-xs text-slate-400 font-bold">%</span>
+                </div>
+              </div>
+
+              {/* 5. Plazo del Financiamiento (1 a 6 años) con tasas automáticas por banco */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Plazo del Financiamiento</span>
+                  </label>
+                  <span className="text-cotripar-700 font-black text-xs">
+                    {plazoAnios} {plazoAnios === 1 ? 'Año' : 'Años'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-6 gap-1.5">
+                  {[1, 2, 3, 4, 5, 6].map((p) => {
+                    const currentBank = bancos.find((b) => b.id === selectedBancoId);
+                    const rateForP = currentBank?.tasas_por_plazo ? currentBank.tasas_por_plazo[String(p)] : null;
+                    const isConfigured = currentBank?.tasas_por_plazo ? rateForP != null : true;
+                    const isSelected = plazoAnios === p;
+
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => handlePlazoChange(p)}
+                        className={`py-2 px-1 text-xs font-extrabold rounded-xl border transition-all flex flex-col items-center justify-center ${
+                          isSelected
+                            ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
+                            : isConfigured
+                            ? 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                            : 'bg-slate-100/50 text-slate-400 border-dashed border-slate-200 hover:bg-slate-100/80'
+                        }`}
+                        title={isConfigured ? `Tasa según tabla: ${rateForP}%` : 'Plazo sin tasa de tabla en este banco'}
+                      >
+                        <span>{p}a</span>
+                        {rateForP != null ? (
+                          <span
+                            className={`text-[9px] font-semibold mt-0.5 ${
+                              isSelected ? 'text-cotripar-100' : 'text-slate-500'
+                            }`}
+                          >
+                            {Number(rateForP).toFixed(2)}%
+                          </span>
+                        ) : (
+                          currentBank?.tasas_por_plazo && (
+                            <span
+                              className={`text-[9px] font-normal mt-0.5 ${
+                                isSelected ? 'text-cotripar-200' : 'text-slate-300'
+                              }`}
+                            >
+                              s/tasa
+                            </span>
+                          )
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Advertencia o indicador de ajuste automático según tabla del banco */}
+                {(() => {
+                  const currentBank = bancos.find((b) => b.id === selectedBancoId);
+                  const rateForCurrent = currentBank?.tasas_por_plazo ? currentBank.tasas_por_plazo[String(plazoAnios)] : null;
+                  if (currentBank?.tasas_por_plazo && rateForCurrent == null) {
+                    return (
+                      <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 font-medium">
+                        ⚠️ Plazo sin tasa de tabla en este banco — ingrese tasa manual si aplica
+                      </p>
+                    );
+                  }
+                  if (rateForCurrent != null) {
+                    return (
+                      <p className="text-[10px] text-slate-500 flex items-center gap-1 font-medium">
+                        <span>
+                          💡 Tasa ajustada automáticamente a <strong>{Number(rateForCurrent).toFixed(2)}%</strong> para{' '}
+                          {plazoAnios} {plazoAnios === 1 ? 'año' : 'años'} ({currentBank?.entidad}).
+                        </span>
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+
+              {/* 6. Periodicidad de Amortización */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Periodicidad de Amortización
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFrecuencia('anual')}
+                    className={`py-2.5 px-3 text-xs font-bold rounded-xl border transition-all text-center ${
+                      frecuencia === 'anual'
+                        ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Anual (1 cuota/año)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFrecuencia('semestral')}
+                    className={`py-2.5 px-3 text-xs font-bold rounded-xl border transition-all text-center ${
+                      frecuencia === 'semestral'
+                        ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Semestral (2 cuotas/año)
+                  </button>
+                </div>
+
+                {/* Modalidad Semestral */}
+                {frecuencia === 'semestral' && (
+                  <div className="mt-2 p-3 bg-cotripar-50/70 border border-cotripar-200 rounded-xl animate-in fade-in space-y-1.5">
+                    <label className="text-xs font-bold text-cotripar-900 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-cotripar-700" />
+                      <span>Modalidad Semestral</span>
+                    </label>
+                    <select
+                      value={modalidadSemestral}
+                      onChange={(e) => setModalidadSemestral(e.target.value as ModalidadSemestral)}
+                      className="w-full px-3 py-2 text-xs font-bold text-slate-900 bg-white border border-cotripar-300 rounded-lg focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+                    >
+                      <option value="zafra_interes_primero">
+                        Zafra (1° sem solo interés, 2° sem cap + int)
+                      </option>
+                      <option value="constante">
+                        Constante Semestral (Capital uniforme)
+                      </option>
+                    </select>
+                    <p className="text-[10px] text-cotripar-800">
+                      {modalidadSemestral === 'zafra_interes_primero'
+                        ? '🌾 Esquema Zafra: cuota de interés en siembra y amortización principal en cosecha.'
+                        : '⚖️ Amortización constante: el capital se divide equitativamente en todos los semestres.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* 7. Resumen Compacto: Gasto Administrativo */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-bold text-slate-700 block">Gasto Administrativo (1%):</span>
+                  <span className="text-[10px] text-slate-400">Cálculo automático s/ capital</span>
+                </div>
+                <span className="font-extrabold text-slate-900 text-sm">
+                  {formatUSD(resultado.gastoAdmin)}
+                </span>
+              </div>
+            </>
+          )}
 
           {/* Nota breve legal */}
           <div className="flex items-start gap-1.5 text-[10px] text-slate-400 leading-tight px-1">
@@ -938,8 +1397,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 <span className="font-extrabold text-slate-900">{formatUSD(successModalData.resultado.capital)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Banco / Tasa:</span>
-                <span className="font-semibold text-slate-800">{successModalData.banco} ({successModalData.resultado.tasaAnual}%)</span>
+                <span className="text-slate-500">Modalidad / Tasa:</span>
+                <span className="font-semibold text-slate-800">
+                  {successModalData.resultado.tipoFinanciacion === 'F_COTRIPAR'
+                    ? `F COTRIPAR (${successModalData.resultado.plazoMeses}m • ${successModalData.resultado.tasaMensual?.toFixed(2)}% mes)`
+                    : `${successModalData.banco} (${successModalData.resultado.tasaAnual}%)`}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Mayor Cuota Año 1:</span>

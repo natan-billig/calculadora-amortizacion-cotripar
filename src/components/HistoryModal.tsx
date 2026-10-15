@@ -21,7 +21,8 @@ import {
   FileSignature,
   X,
   CheckCircle2,
-  Plus
+  Plus,
+  Tag
 } from 'lucide-react';
 import { generarPDFCartaOferta, type CartaOfertaPayload } from '../utils/offerLetterGenerator';
 
@@ -54,6 +55,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   const [selectedSemestre, setSelectedSemestre] = useState<1 | 2>(new Date().getMonth() < 6 ? 1 : 2);
   const [selectedAsesor, setSelectedAsesor] = useState<string>('todos');
   const [selectedBanco, setSelectedBanco] = useState<string>('todos');
+  const [selectedMarca, setSelectedMarca] = useState<string>('todas');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
   // Offer Letter Modal State (Admin Only)
@@ -136,6 +138,24 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     return Array.from(set).sort();
   }, [simulaciones]);
 
+  const availableMarcas = useMemo(() => {
+    const set = new Set<string>();
+    simulaciones.forEach((s) => {
+      if (s.marca_producto?.trim()) {
+        s.marca_producto.split(',').forEach((m) => {
+          const trimmed = m.trim();
+          if (trimmed) set.add(trimmed);
+        });
+      }
+      if (s.items_json && Array.isArray(s.items_json)) {
+        s.items_json.forEach((it) => {
+          if (it.marca?.trim()) set.add(it.marca.trim());
+        });
+      }
+    });
+    return Array.from(set).sort();
+  }, [simulaciones]);
+
   // Main Filtering Logic
   const filteredSimulaciones = useMemo(() => {
     return simulaciones.filter((sim) => {
@@ -164,7 +184,18 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         return false;
       }
 
-      // Search (Name or RUC or Asesor or Bank)
+      // Marca filter
+      if (selectedMarca !== 'todas') {
+        const sMarca = (sim.marca_producto || '').toLowerCase();
+        const target = selectedMarca.toLowerCase();
+        const matchInMarcaField = sMarca.includes(target);
+        const matchInItems = sim.items_json && Array.isArray(sim.items_json)
+          ? sim.items_json.some((it) => (it.marca || '').toLowerCase().includes(target))
+          : false;
+        if (!matchInMarcaField && !matchInItems) return false;
+      }
+
+      // Search (Name or RUC or Asesor or Bank or Marca)
       if (searchTerm.trim() !== '') {
         const term = searchTerm.toLowerCase();
         const matchName = (sim.cliente_nombre || '').toLowerCase().includes(term);
@@ -172,7 +203,8 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         const matchMaquina = (sim.maquina_implemento || '').toLowerCase().includes(term);
         const matchAsesor = (sim.vendedor_nombre || '').toLowerCase().includes(term);
         const matchBanco = (sim.banco_entidad || '').toLowerCase().includes(term);
-        if (!matchName && !matchRuc && !matchMaquina && !matchAsesor && !matchBanco) return false;
+        const matchMarca = (sim.marca_producto || '').toLowerCase().includes(term);
+        if (!matchName && !matchRuc && !matchMaquina && !matchAsesor && !matchBanco && !matchMarca) return false;
       }
 
       return true;
@@ -185,6 +217,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     selectedSemestre,
     selectedAsesor,
     selectedBanco,
+    selectedMarca,
     searchTerm
   ]);
 
@@ -255,6 +288,26 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       .sort((a, b) => b.volumen - a.volumen);
   }, [filteredSimulaciones]);
 
+  // BI Breakdown 3: Cotizaciones y Volumen por Marca
+  const distribucionMarcas = useMemo(() => {
+    const stats: Record<string, { nombre: string; count: number; volumen: number }> = {};
+    filteredSimulaciones.forEach((s) => {
+      const marcasArr = s.marca_producto
+        ? s.marca_producto.split(',').map((m) => m.trim()).filter(Boolean)
+        : [];
+      const list = marcasArr.length > 0 ? Array.from(new Set(marcasArr)) : ['Otras Marcas'];
+
+      list.forEach((marca) => {
+        if (!stats[marca]) {
+          stats[marca] = { nombre: marca, count: 0, volumen: 0 };
+        }
+        stats[marca].count += 1;
+        stats[marca].volumen += Number(s.capital_usd || 0);
+      });
+    });
+    return Object.values(stats).sort((a, b) => b.volumen - a.volumen);
+  }, [filteredSimulaciones]);
+
   // Export CSV Function (Excel Compatible with UTF-8 BOM and ;)
   const handleExportCSV = () => {
     if (filteredSimulaciones.length === 0) {
@@ -266,15 +319,17 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       'Fecha',
       'Hora',
       'Protocolo',
+      'Tipo Financiación',
       'Asesor Comercial',
       'Cliente',
       'RUC',
+      'Marca',
       'Máquina / Implemento',
-      'Banco',
-      'Tasa Anual (%)',
+      'Banco / Entidad',
+      'Tasa (%)',
       'Capital Solicitado (USD)',
       'Gasto Admin (USD)',
-      'Plazo (Años)',
+      'Plazo (Meses / Años)',
       'Periodicidad',
       'Modalidad',
       'Total Intereses (USD)',
@@ -298,19 +353,28 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       });
       const proto = `COT-SIM-${dateObj.getFullYear()}${String(dateObj.getMonth() + 1).padStart(2, '0')}${String(dateObj.getDate()).padStart(2, '0')}-${(sim.id || '').substring(0, 4).toUpperCase()}`;
 
+      const tipoFin = sim.tipo_financiacion === 'F_COTRIPAR' ? 'F COTRIPAR (Financiación Propia)' : 'Financiación Bancaria (SAC)';
+      const bancoTxt = sim.tipo_financiacion === 'F_COTRIPAR' ? 'F COTRIPAR' : (sim.banco_entidad || 'Banco');
+      const plazoTxt = sim.tipo_financiacion === 'F_COTRIPAR' ? `${sim.plazo_meses || 17} meses` : `${sim.plazo_anios} años`;
+      const tasaTxt = sim.tipo_financiacion === 'F_COTRIPAR'
+        ? `${Number(sim.tasa_anual > 2 ? sim.tasa_anual / 12 : sim.tasa_anual).toFixed(2)}% m.`
+        : `${Number(sim.tasa_anual || 0).toFixed(2)}% a.`;
+
       return [
         fecha,
         hora,
         proto,
+        `"${tipoFin}"`,
         `"${(sim.vendedor_nombre || '').replace(/"/g, '""')}"`,
         `"${(sim.cliente_nombre || '').replace(/"/g, '""')}"`,
         `"${(sim.cliente_ruc || '').replace(/"/g, '""')}"`,
+        `"${(sim.marca_producto || '-').replace(/"/g, '""')}"`,
         `"${(sim.maquina_implemento || '').replace(/"/g, '""')}"`,
-        `"${(sim.banco_entidad || '').replace(/"/g, '""')}"`,
-        Number(sim.tasa_anual || 0).toFixed(2),
+        `"${bancoTxt.replace(/"/g, '""')}"`,
+        `"${tasaTxt}"`,
         Number(sim.capital_usd || 0).toFixed(2),
         Number(sim.gasto_admin_usd || 0).toFixed(2),
-        sim.plazo_anios,
+        `"${plazoTxt}"`,
         `"${sim.periodicidad || 'anual'}"`,
         `"${sim.modalidad_semestral || '-'}"`,
         Number(sim.total_intereses_usd || 0).toFixed(2),
@@ -357,11 +421,22 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   };
 
   const handleDownloadHistoricalPDF = async (sim: SimulacionPDF) => {
+    const tasaMensual = sim.tipo_financiacion === 'F_COTRIPAR'
+      ? (sim.tasa_anual > 2 ? sim.tasa_anual / 12 : sim.tasa_anual)
+      : undefined;
+
     const resultadoMock: ResultadoAleman = {
       capital: sim.capital_usd,
       tasaAnual: sim.tasa_anual,
+      tasaMensual,
       plazoAnios: sim.plazo_anios,
-      frecuencia: sim.periodicidad === 'semestral' ? 'semestral' : 'anual',
+      plazoMeses: sim.plazo_meses,
+      mesColocacion: sim.mes_colocacion,
+      fechaTopeVencimiento: sim.fecha_tope_vencimiento,
+      tipoFinanciacion: sim.tipo_financiacion,
+      frecuencia: (sim.periodicidad === 'semestral' || sim.periodicidad === 'semestral_zafra')
+        ? 'semestral'
+        : (sim.periodicidad === 'mensual' ? 'mensual' as any : 'anual'),
       modalidadSemestral: sim.modalidad_semestral as any,
       gastoAdmin: sim.gasto_admin_usd,
       cronograma: sim.cronograma_json || [],
@@ -379,7 +454,8 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     const doc = await generarPDFSimulacion(sim, resultadoMock);
     const safeName = sim.cliente_nombre.replace(/\s+/g, '_');
     const safeRuc = (sim.cliente_ruc || '').replace(/\s+/g, '');
-    doc.save(`Cotripar_Simulacion_${safeName}${safeRuc ? `_${safeRuc}` : ''}.pdf`);
+    const prefix = sim.tipo_financiacion === 'F_COTRIPAR' ? 'Cotripar_FCOTRIPAR' : 'Cotripar_Simulacion';
+    doc.save(`${prefix}_${safeName}${safeRuc ? `_${safeRuc}` : ''}.pdf`);
     showToast('¡PDF histórico descargado con éxito!');
   };
 
@@ -391,10 +467,14 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
 
     const initialItems: ItemMaquinaria[] =
       sim.items_json && Array.isArray(sim.items_json) && sim.items_json.length > 0
-        ? sim.items_json
+        ? sim.items_json.map((it) => ({
+            ...it,
+            marca: it.marca || sim.marca_producto || 'Cotripar'
+          }))
         : [
             {
               id: '1',
+              marca: sim.marca_producto || 'Cotripar',
               descripcion: sim.maquina_implemento || 'Equipamiento Agrícola Cotripar',
               cantidad: 1,
               precioUnitarioUSD: Number(sim.capital_usd) + (Number(sim.anticipo_usd) || 0)
@@ -518,7 +598,14 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         tasaAnual: offerModalSim.tasa_anual,
         gastoAdminUSD: offerModalSim.gasto_admin_usd,
         mayorCuotaAnio1USD: offerModalSim.mayor_cuota_anio1_usd,
-        totalPagadoUSD: offerModalSim.total_pagado_usd
+        totalPagadoUSD: offerModalSim.total_pagado_usd,
+        tipoFinanciacion: offerModalSim.tipo_financiacion,
+        mesColocacion: offerModalSim.mes_colocacion,
+        fechaTopeVencimiento: offerModalSim.fecha_tope_vencimiento,
+        plazoMeses: offerModalSim.plazo_meses,
+        tasaMensual: offerModalSim.tipo_financiacion === 'F_COTRIPAR'
+          ? (offerModalSim.tasa_anual > 2 ? offerModalSim.tasa_anual / 12 : offerModalSim.tasa_anual)
+          : undefined
       };
 
       const doc = await generarPDFCartaOferta(payload);
@@ -606,7 +693,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         </div>
 
         {/* Dynamic Period Selectors */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-1">
           {/* Year selector (visible when not 'todo') */}
           {periodoTipo !== 'todo' && (
             <div>
@@ -698,6 +785,26 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
             </select>
           </div>
 
+          {/* Brand Selector */}
+          <div>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1 flex items-center gap-1">
+              <Tag className="w-3 h-3 text-slate-400" />
+              <span>Marca de Producto</span>
+            </label>
+            <select
+              value={selectedMarca}
+              onChange={(e) => setSelectedMarca(e.target.value)}
+              className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+            >
+              <option value="todas">Todas las Marcas</option>
+              {availableMarcas.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Search by Client or RUC */}
           <div>
             <label className="text-[11px] font-bold text-slate-600 block mb-1 flex items-center gap-1">
@@ -768,8 +875,8 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         </div>
       </div>
 
-      {/* 2 Quadros de Análise lado a lado (BI) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* 3 Quadros de Análise lado a lado (BI) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Panel 1: Rendimiento por Asesor */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -845,6 +952,47 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* Panel 3: Cotizaciones y Volumen por Marca */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <Tag className="w-4 h-4 text-emerald-600" />
+              <span>🏷️ Cotizaciones y Volumen por Marca</span>
+            </h3>
+            <span className="text-xs text-slate-400 font-semibold">{distribucionMarcas.length} marcas</span>
+          </div>
+
+          {distribucionMarcas.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-6">Sin registros para el período seleccionado.</p>
+          ) : (
+            <div className="space-y-3">
+              {distribucionMarcas.map((item) => {
+                const percent = totalProyecciones > 0 ? (item.count / totalProyecciones) * 100 : 0;
+                return (
+                  <div key={item.nombre} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-800 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                        {item.nombre}
+                      </span>
+                      <div className="text-right">
+                        <span className="font-extrabold text-slate-900 mr-2">{item.count} cotiz.</span>
+                        <span className="text-[11px] text-emerald-700 font-bold">({formatUSD(item.volumen)})</span>
+                      </div>
+                    </div>
+                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-600 rounded-full transition-all"
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Detailed Simulations Table */}
@@ -881,8 +1029,10 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                 <tr className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200">
                   <th className="py-3 px-4">Fecha</th>
                   <th className="py-3 px-4">Cliente / RUC</th>
+                  <th className="py-3 px-3">Marca</th>
+                  <th className="py-3 px-3">Máquina / Implemento</th>
                   <th className="py-3 px-3">Asesor</th>
-                  <th className="py-3 px-3">Banco / Tasa</th>
+                  <th className="py-3 px-3">Modalidad / Banco</th>
                   <th className="py-3 px-3 text-right">Capital</th>
                   <th className="py-3 px-3">Plazo</th>
                   <th className="py-3 px-3 text-right">Mayor Cuota Año 1</th>
@@ -910,7 +1060,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       </td>
 
                       <td className="py-3 px-4">
-                        <span className="font-bold text-slate-900 block truncate max-w-[200px]" title={sim.cliente_nombre}>
+                        <span className="font-bold text-slate-900 block truncate max-w-[170px]" title={sim.cliente_nombre}>
                           {sim.cliente_nombre}
                         </span>
                         {sim.cliente_ruc ? (
@@ -918,11 +1068,18 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                         ) : (
                           <span className="text-[10px] text-slate-400 block">-</span>
                         )}
-                        {sim.maquina_implemento && (
-                          <span className="text-[10px] text-cotripar-700 font-semibold block truncate max-w-[200px] mt-0.5" title={sim.maquina_implemento}>
-                            🚜 {sim.maquina_implemento}
-                          </span>
-                        )}
+                      </td>
+
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-extrabold bg-slate-100 text-slate-800 border border-slate-200">
+                          🏷️ {sim.marca_producto || 'Cotripar'}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3">
+                        <span className="text-[11px] text-slate-800 font-semibold block truncate max-w-[190px]" title={sim.maquina_implemento}>
+                          🚜 {sim.maquina_implemento || 'Equipamiento Agrícola'}
+                        </span>
                       </td>
 
                       <td className="py-3 px-3 text-slate-600 whitespace-nowrap">
@@ -930,11 +1087,24 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       </td>
 
                       <td className="py-3 px-3 whitespace-nowrap">
-                        <span className="font-semibold text-slate-800 flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-slate-400" />
-                          {sim.banco_entidad}
-                        </span>
-                        <span className="text-[10px] text-slate-500">{formatPercent(sim.tasa_anual)}</span>
+                        {sim.tipo_financiacion === 'F_COTRIPAR' ? (
+                          <div>
+                            <span className="inline-flex items-center gap-1 font-extrabold text-cotripar-700 bg-cotripar-50 border border-cotripar-200 px-2 py-0.5 rounded-md text-[11px]">
+                              🔴 F COTRIPAR
+                            </span>
+                            <span className="text-[10px] text-slate-500 block mt-0.5 font-semibold">
+                              {Number(sim.tasa_anual > 2 ? sim.tasa_anual / 12 : sim.tasa_anual).toFixed(2)}% mensual
+                            </span>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="font-semibold text-slate-800 flex items-center gap-1">
+                              <Building2 className="w-3 h-3 text-slate-400" />
+                              {sim.banco_entidad}
+                            </span>
+                            <span className="text-[10px] text-slate-500 block">{formatPercent(sim.tasa_anual)}</span>
+                          </div>
+                        )}
                       </td>
 
                       <td className="py-3 px-3 text-right font-bold text-slate-900 whitespace-nowrap">
@@ -942,8 +1112,17 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       </td>
 
                       <td className="py-3 px-3 text-slate-600 whitespace-nowrap">
-                        <span className="font-semibold">{sim.plazo_anios} años</span>
-                        <span className="text-[10px] text-slate-400 block capitalize">{sim.periodicidad}</span>
+                        {sim.tipo_financiacion === 'F_COTRIPAR' ? (
+                          <div>
+                            <span className="font-bold text-slate-900">{sim.plazo_meses || 17} meses</span>
+                            <span className="text-[10px] text-cotripar-600 block font-medium">Tope: {sim.fecha_tope_vencimiento || '-'}</span>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="font-semibold">{sim.plazo_anios} años</span>
+                            <span className="text-[10px] text-slate-400 block capitalize">{sim.periodicidad}</span>
+                          </div>
+                        )}
                       </td>
 
                       <td className="py-3 px-3 text-right font-bold text-amber-700 whitespace-nowrap">

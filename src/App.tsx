@@ -5,6 +5,7 @@ import { Calculator } from './components/Calculator';
 import { HistoryModal } from './components/HistoryModal';
 import { BankManagerModal } from './components/BankManagerModal';
 import { UserManagerModal } from './components/UserManagerModal';
+import { BrandManagerModal } from './components/BrandManagerModal';
 import { LoginScreen } from './components/LoginScreen';
 import { Toast } from './components/Toast';
 import { InstallPwaPrompt } from './components/InstallPwaPrompt';
@@ -16,6 +17,8 @@ const MainApp: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<'calculadora' | 'historial' | 'tasas' | 'usuarios'>('calculadora');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [loadedSimulation, setLoadedSimulation] = useState<SimulacionPDF | null>(null);
+  const [isBrandManagerOpen, setIsBrandManagerOpen] = useState<boolean>(false);
+
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -69,12 +72,14 @@ const MainApp: React.FC = () => {
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         showToast={showToast}
+        onOpenBrandManager={() => setIsBrandManagerOpen(true)}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {currentTab === 'calculadora' && (
           <Calculator
             onOpenBankManager={() => setCurrentTab('tasas')}
+            onOpenBrandManager={() => setIsBrandManagerOpen(true)}
             showToast={showToast}
             initialSimulation={loadedSimulation}
           />
@@ -95,6 +100,16 @@ const MainApp: React.FC = () => {
           <UserManagerModal showToast={showToast} />
         )}
       </main>
+
+      {/* Brand Manager Modal (Admin Only) */}
+      {isAdmin && (
+        <BrandManagerModal
+          isOpen={isBrandManagerOpen}
+          onClose={() => setIsBrandManagerOpen(false)}
+          showToast={showToast}
+        />
+      )}
+
 
       {/* Corporate Footer with Natan Billig signature & APP_VERSION */}
       <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 no-print mt-auto">

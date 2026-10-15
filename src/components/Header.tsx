@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Calculator, History, Settings, Users, LogOut, ChevronDown, Lock } from 'lucide-react';
+import { Calculator, History, Settings, Users, LogOut, ChevronDown, Lock, Tag } from 'lucide-react';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { triggerPwaInstall, shouldShowInstallButton } from './InstallPwaPrompt';
 
@@ -8,9 +8,11 @@ interface HeaderProps {
   currentTab: 'calculadora' | 'historial' | 'tasas' | 'usuarios';
   setCurrentTab: (tab: 'calculadora' | 'historial' | 'tasas' | 'usuarios') => void;
   showToast: (msg: string) => void;
+  onOpenBrandManager?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showToast }) => {
+
+export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showToast, onOpenBrandManager }) => {
   const { currentUser, isAdmin, logout } = useAuth();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -94,6 +96,15 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
               >
                 <Users className="w-4 h-4" />
                 <span>Usuarios</span>
+              </button>
+
+              <button
+                onClick={onOpenBrandManager}
+                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                title="Gestionar Marcas de Productos"
+              >
+                <Tag className="w-4 h-4 text-cotripar-700" />
+                <span>Marcas</span>
               </button>
             </nav>
           )}
@@ -233,6 +244,14 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
             >
               <Users className="w-4 h-4 mb-0.5" />
               <span>Usuarios</span>
+            </button>
+            <button
+              onClick={onOpenBrandManager}
+              className="flex flex-col items-center py-1 px-2 rounded text-slate-500 hover:text-cotripar-700"
+              title="Gestionar Marcas"
+            >
+              <Tag className="w-4 h-4 mb-0.5" />
+              <span>Marcas</span>
             </button>
           </div>
         )}

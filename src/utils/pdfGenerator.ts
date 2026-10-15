@@ -103,11 +103,15 @@ export async function generarPDFSimulacion(
   doc.text('División de Maquinarias e Implementos Agrícolas • RUC: 80019076-9 • Paraguay', leftX, 22.5);
 
   // Top Right Protocol & Metadata
+  const isCotripar = simulacion.tipo_financiacion === 'F_COTRIPAR' || resultado.tipoFinanciacion === 'F_COTRIPAR';
   const rightX = pageWidth - 14;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.0);
   doc.setTextColor(255, 255, 255);
-  doc.text('PROYECCIÓN FINANCIERA — SISTEMA ALEMÁN (USD)', rightX, 8.5, { align: 'right' });
+  const headerTitle = isCotripar
+    ? 'PROFORMA DE FINANCIACIÓN PROPIA — F COTRIPAR (USD)'
+    : 'PROYECCIÓN FINANCIERA — SISTEMA ALEMÁN (USD)';
+  doc.text(headerTitle, rightX, 8.5, { align: 'right' });
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.8);
@@ -145,16 +149,23 @@ export async function generarPDFSimulacion(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(200, 16, 46); // Cotripar Red
-  doc.text('1. PARÁMETROS DEL CRÉDITO Y DEL CLIENTE', 18, currentY + 5.5);
+  const box1Title = isCotripar
+    ? '1. PARÁMETROS DE FINANCIACIÓN DIRECTA F COTRIPAR'
+    : '1. PARÁMETROS DEL CRÉDITO Y DEL CLIENTE';
+  doc.text(box1Title, 18, currentY + 5.5);
 
   const colLeftLabelX = 18;
   const colLeftValX = 50;
   const colRightLabelX = 108;
   const colRightValX = 144;
 
-  const freqDesc = simulacion.periodicidad === 'semestral'
-    ? (simulacion.modalidad_semestral === 'zafra_interes_primero' ? 'Semestral (Zafra)' : 'Semestral (Constante)')
-    : 'Anual Estándar';
+  const freqDesc = isCotripar
+    ? (simulacion.periodicidad === 'semestral_zafra' || simulacion.periodicidad === 'semestral'
+        ? 'Semestral / Zafra'
+        : (simulacion.periodicidad === 'pago_unico' ? 'Pago Único' : 'Mensual'))
+    : (simulacion.periodicidad === 'semestral'
+        ? (simulacion.modalidad_semestral === 'zafra_interes_primero' ? 'Semestral (Zafra)' : 'Semestral (Constante)')
+        : 'Anual Estándar');
 
   // Row 1: Y = currentY + 11.5
   doc.setFont('helvetica', 'normal');
@@ -170,10 +181,10 @@ export async function generarPDFSimulacion(
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Entidad Bancaria:', colRightLabelX, currentY + 11.5);
+  doc.text(isCotripar ? 'Modalidad Crédito:' : 'Entidad Bancaria:', colRightLabelX, currentY + 11.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(simulacion.banco_entidad || 'Banco Comercial', colRightValX, currentY + 11.5);
+  doc.text(isCotripar ? 'F COTRIPAR (Financiación Directa)' : (simulacion.banco_entidad || 'Banco Comercial'), colRightValX, currentY + 11.5);
 
   // Row 2: Y = currentY + 17
   doc.setFont('helvetica', 'normal');
@@ -185,10 +196,13 @@ export async function generarPDFSimulacion(
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Tasa Nominal Anual:', colRightLabelX, currentY + 17);
+  doc.text(isCotripar ? 'Tasa de Interés:' : 'Tasa Nominal Anual:', colRightLabelX, currentY + 17);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(formatPercent(simulacion.tasa_anual), colRightValX, currentY + 17);
+  const tasaDisplay = isCotripar
+    ? `${resultado.tasaMensual ? resultado.tasaMensual.toFixed(2) : (simulacion.tasa_anual > 2 ? (simulacion.tasa_anual / 12).toFixed(2) : simulacion.tasa_anual.toFixed(2))}% mensual (+ IVA 10%)`
+    : formatPercent(simulacion.tasa_anual);
+  doc.text(tasaDisplay, colRightValX, currentY + 17);
 
   // Row 3: Y = currentY + 22.5
   doc.setFont('helvetica', 'normal');
@@ -196,17 +210,24 @@ export async function generarPDFSimulacion(
   doc.text('Máquina / Implemento:', colLeftLabelX, currentY + 22.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(200, 16, 46); // Cotripar Red for highlight
-  const maquinaTxt = (simulacion.maquina_implemento || 'Equipo Cotizado').length > 32
-    ? (simulacion.maquina_implemento || '').substring(0, 30) + '...'
-    : simulacion.maquina_implemento || 'Equipo Cotizado';
+  let rawMaquina = simulacion.maquina_implemento || 'Equipo Cotizado';
+  if (simulacion.marca_producto && !rawMaquina.includes(simulacion.marca_producto)) {
+    rawMaquina = `[${simulacion.marca_producto}] ${rawMaquina}`;
+  }
+  const maquinaTxt = rawMaquina.length > 32
+    ? rawMaquina.substring(0, 30) + '...'
+    : rawMaquina;
   doc.text(maquinaTxt, colLeftValX, currentY + 22.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Plazo / Periodicidad:', colRightLabelX, currentY + 22.5);
+  doc.text(isCotripar ? 'Plazo Otorgado / Tope:' : 'Plazo / Periodicidad:', colRightLabelX, currentY + 22.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(`${simulacion.plazo_anios} años • ${freqDesc}`, colRightValX, currentY + 22.5);
+  const plazoDesc = isCotripar
+    ? `${simulacion.plazo_meses || 17} meses • Vence: ${simulacion.fecha_tope_vencimiento || '20/03/2028'}`
+    : `${simulacion.plazo_anios} años • ${freqDesc}`;
+  doc.text(plazoDesc, colRightValX, currentY + 22.5);
 
   // Row 4: Y = currentY + 28
   doc.setFont('helvetica', 'normal');
@@ -214,11 +235,14 @@ export async function generarPDFSimulacion(
   doc.text('Capital Solicitado:', colLeftLabelX, currentY + 28);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(`${formatUSD(simulacion.capital_usd)} (Adm: ${formatUSD(simulacion.gasto_admin_usd)})`, colLeftValX, currentY + 28);
+  const capDesc = isCotripar
+    ? `${formatUSD(simulacion.capital_usd)} (Adm: Exento $ 0)`
+    : `${formatUSD(simulacion.capital_usd)} (Adm: ${formatUSD(simulacion.gasto_admin_usd)})`;
+  doc.text(capDesc, colLeftValX, currentY + 28);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Mayor Cuota Año 1:', colRightLabelX, currentY + 28);
+  doc.text(isCotripar ? 'Mayor Cuota del Plan:' : 'Mayor Cuota Año 1:', colRightLabelX, currentY + 28);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(200, 16, 46);
   doc.text(formatUSD(simulacion.mayor_cuota_anio1_usd), colRightValX, currentY + 28);
@@ -354,8 +378,9 @@ export async function generarPDFSimulacion(
   doc.setFontSize(6.5);
   doc.setTextColor(71, 85, 105);
 
-  const avisoLegalTexto =
-    'Los cálculos, tasas y valores de cuotas expuestos en este documento son únicamente referenciales y aproximados, teniendo en cuenta un promedio estimado de gastos administrativos del sistema financiero e impuestos vigentes (IVA 10% sobre intereses). Esta proyección no constituye una oferta de crédito vinculante y está sujeta a evaluación y aprobación crediticia por parte de la entidad financiera correspondiente.';
+  const avisoLegalTexto = isCotripar
+    ? 'Los cálculos, tasas y valores de cuotas expuestos en esta proforma corresponden al programa oficial de Financiación Propia F COTRIPAR (Ciclo 2026-2028), sujeto a evaluación crediticia por parte de Cotripar S.A. Operación sin gasto administrativo (0% exento) e IVA del 10% aplicado exclusivamente sobre los intereses devengados.'
+    : 'Los cálculos, tasas y valores de cuotas expuestos en este documento son únicamente referenciales y aproximados, teniendo en cuenta un promedio estimado de gastos administrativos del sistema financiero e impuestos vigentes (IVA 10% sobre intereses). Esta proyección no constituye una oferta de crédito vinculante y está sujeta a evaluación y aprobación crediticia por parte de la entidad financiera correspondiente.';
 
   const splitTexto = doc.splitTextToSize(avisoLegalTexto, pageWidth - 34);
   doc.text(splitTexto, 17, postTableY + 9.5);

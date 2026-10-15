@@ -30,6 +30,12 @@ export interface CartaOfertaPayload {
   gastoAdminUSD: number;
   mayorCuotaAnio1USD: number;
   totalPagadoUSD: number;
+  // F COTRIPAR & Marcas (V.1.9)
+  tipoFinanciacion?: string;
+  mesColocacion?: string;
+  fechaTopeVencimiento?: string;
+  plazoMeses?: number;
+  tasaMensual?: number;
 }
 
 interface LogoData {
@@ -263,7 +269,10 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.text('MODALIDAD CRÉDITO:', cRightX, currentY + 11.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text('Financiación Bancaria (SAC)', cRightValX, currentY + 11.5);
+  const modTxt = data.tipoFinanciacion === 'F_COTRIPAR'
+    ? 'F COTRIPAR (Financiación Directa)'
+    : 'Financiación Bancaria (SAC)';
+  doc.text(modTxt, cRightValX, currentY + 11.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
@@ -316,7 +325,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
       const unitPrice = Number(it.precioUnitarioUSD) || 0;
       const itemTotal = itemCant * unitPrice;
 
-      let itemDesc = it.descripcion.trim() || 'Equipamiento Agrícola Cotripar';
+      let itemDesc = `${it.marca ? `[${it.marca}] ` : ''}${it.descripcion.trim() || 'Equipamiento Agrícola Cotripar'}`;
       if (data.items!.length === 1 && data.especificacionTecnica?.trim()) {
         itemDesc += `\n${data.especificacionTecnica.trim()}`;
       }
@@ -445,29 +454,44 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setFillColor(200, 16, 46);
   doc.rect(boxAX, currentY, 1.5, boxAHeight, 'F');
 
+  const isCotripar = data.tipoFinanciacion === 'F_COTRIPAR';
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.2);
   doc.setTextColor(200, 16, 46);
-  doc.text('Condiciones de Financiación Bancaria (Ref.)', boxAX + 3.5, currentY + 4.5);
+  doc.text(
+    isCotripar ? 'Condiciones de Financiación F COTRIPAR (Directa)' : 'Condiciones de Financiación Bancaria (Ref.)',
+    boxAX + 3.5,
+    currentY + 4.5
+  );
 
   doc.setFontSize(6.3);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  const freqTexto =
-    data.periodicidad === 'semestral'
-      ? data.modalidadSemestral === 'zafra_interes_primero'
-        ? 'Semestral (Zafra)'
-        : 'Semestral (Constante)'
-      : 'Anual Estándar';
+  const freqTexto = isCotripar
+    ? (data.periodicidad === 'semestral_zafra' || data.periodicidad === 'semestral'
+        ? 'Semestral / Zafra'
+        : (data.periodicidad === 'pago_unico' ? 'Pago Único' : 'Mensual'))
+    : (data.periodicidad === 'semestral'
+        ? (data.modalidadSemestral === 'zafra_interes_primero' ? 'Semestral (Zafra)' : 'Semestral (Constante)')
+        : 'Anual Estándar');
 
-  const finLines = [
-    `• Entidad: ${data.bancoEntidad || 'Banco Comercial'}`,
-    `• Capital a Financiar: ${formatUSD(totalAFinanciar)} (Neto de Anticipo)`,
-    `• Plazo: ${data.plazoAnios} años (${freqTexto})`,
-    `• Tasa Nominal Ref.: ${Number(data.tasaAnual).toFixed(2)}% anual (+ IVA 10% s/ int.)`,
-    `• Gasto Admin. (1%): ${formatUSD(data.gastoAdminUSD)} | Mayor Cuota Año 1: ${formatUSD(data.mayorCuotaAnio1USD)}`,
-    `• Total Proyectado c/ Financiación: ${formatUSD(data.totalPagadoUSD)}`
-  ];
+  const finLines = isCotripar
+    ? [
+        `• Modalidad: F COTRIPAR (Financiación Directa Propia)`,
+        `• Capital a Financiar: ${formatUSD(totalAFinanciar)} (Neto de Anticipo)`,
+        `• Plazo: ${data.plazoMeses || Math.round(data.plazoAnios * 12)} meses (${freqTexto}) • Tope: ${data.fechaTopeVencimiento || '20/03/2028'}`,
+        `• Tasa Mensual Ref.: ${data.tasaMensual ? data.tasaMensual.toFixed(2) : (data.tasaAnual > 2 ? (data.tasaAnual / 12).toFixed(2) : data.tasaAnual.toFixed(2))}% mensual (+ IVA 10% s/ int.)`,
+        `• Gasto Admin.: Exento ($ 0) | Mayor Cuota: ${formatUSD(data.mayorCuotaAnio1USD)}`,
+        `• Total Proyectado c/ Financiación: ${formatUSD(data.totalPagadoUSD)}`
+      ]
+    : [
+        `• Entidad: ${data.bancoEntidad || 'Banco Comercial'}`,
+        `• Capital a Financiar: ${formatUSD(totalAFinanciar)} (Neto de Anticipo)`,
+        `• Plazo: ${data.plazoAnios} años (${freqTexto})`,
+        `• Tasa Nominal Ref.: ${Number(data.tasaAnual).toFixed(2)}% anual (+ IVA 10% s/ int.)`,
+        `• Gasto Admin. (1%): ${formatUSD(data.gastoAdminUSD)} | Mayor Cuota Año 1: ${formatUSD(data.mayorCuotaAnio1USD)}`,
+        `• Total Proyectado c/ Financiación: ${formatUSD(data.totalPagadoUSD)}`
+      ];
   finLines.forEach((l, idx) => {
     doc.text(l, boxAX + 3.5, currentY + 8.5 + idx * 3.8);
   });
