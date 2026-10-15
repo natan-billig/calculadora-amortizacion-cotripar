@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Cotripar - Calculadora de Amortización",
+  "name": "Cotripar S.A. | Calculadora Financiera",
   "short_name": "Cotripar",
-  "description": "Calculadora Financiera de Amortización Cotripar S.A. - Sistema Alemán",
+  "description": "Calculadora Financiera - Cotripar S.A.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

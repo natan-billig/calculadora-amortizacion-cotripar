@@ -49,7 +49,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ showToast, onLoginSucc
           </div>
           <h1 className="text-xl font-extrabold tracking-tight mt-3">COTRIPAR S.A.</h1>
           <p className="text-xs text-cotripar-100 font-medium mt-0.5">
-            Plataforma de Simulación y Proyección de Créditos • Sistema Alemán
+            Calculadora Financiera
           </p>
           <div className="mt-2 inline-block">
             <span className="px-2.5 py-0.5 text-[10px] font-extrabold bg-cotripar-800 text-cotripar-100 rounded-full border border-cotripar-600/50">

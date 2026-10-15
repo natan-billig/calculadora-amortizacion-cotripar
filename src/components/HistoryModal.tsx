@@ -33,16 +33,23 @@ interface HistoryModalProps {
 
 type PeriodoTipo = 'todo' | 'mes' | 'semestre' | 'anio';
 
+const isCotriparSim = (sim?: { tipo_financiacion?: string | null; banco_entidad?: string | null } | null): boolean => {
+  if (!sim) return false;
+  return sim.tipo_financiacion === 'F_COTRIPAR' || (sim.banco_entidad || '').toUpperCase().includes('COTRIPAR');
+};
+
+const normalizeBancoNombre = (sim?: { tipo_financiacion?: string | null; banco_entidad?: string | null } | null): string => {
+  if (isCotriparSim(sim)) {
+    return 'Financiación Cotripar';
+  }
+  return sim?.banco_entidad?.trim() || 'Banco Comercial';
+};
+
 export const HistoryModal: React.FC<HistoryModalProps> = ({
   onLoadSimulation,
   showToast
 }) => {
   const { currentUser } = useAuth();
-
-  // Guard: sellers cannot access History, but admin and coordinador can
-  if (!currentUser || (currentUser.rol !== 'admin' && currentUser.rol !== 'coordinador')) {
-    return null;
-  }
 
   const [simulaciones, setSimulaciones] = useState<SimulacionPDF[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -133,7 +140,8 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   const availableBancos = useMemo(() => {
     const set = new Set<string>();
     simulaciones.forEach((s) => {
-      if (s.banco_entidad?.trim()) set.add(s.banco_entidad.trim());
+      const b = normalizeBancoNombre(s);
+      if (b) set.add(b);
     });
     return Array.from(set).sort();
   }, [simulaciones]);
@@ -180,7 +188,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       }
 
       // Banco filter
-      if (selectedBanco !== 'todos' && sim.banco_entidad !== selectedBanco) {
+      if (selectedBanco !== 'todos' && normalizeBancoNombre(sim) !== selectedBanco) {
         return false;
       }
 
@@ -202,7 +210,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         const matchRuc = (sim.cliente_ruc || '').toLowerCase().includes(term);
         const matchMaquina = (sim.maquina_implemento || '').toLowerCase().includes(term);
         const matchAsesor = (sim.vendedor_nombre || '').toLowerCase().includes(term);
-        const matchBanco = (sim.banco_entidad || '').toLowerCase().includes(term);
+        const matchBanco = (sim.banco_entidad || '').toLowerCase().includes(term) || normalizeBancoNombre(sim).toLowerCase().includes(term);
         const matchMarca = (sim.marca_producto || '').toLowerCase().includes(term);
         if (!matchName && !matchRuc && !matchMaquina && !matchAsesor && !matchBanco && !matchMarca) return false;
       }
@@ -244,7 +252,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     const bancoCounts: Record<string, number> = {};
     const plazoCounts: Record<number, number> = {};
     filteredSimulaciones.forEach((s) => {
-      const b = s.banco_entidad || 'Otro';
+      const b = normalizeBancoNombre(s);
       bancoCounts[b] = (bancoCounts[b] || 0) + 1;
       const p = s.plazo_anios || 5;
       plazoCounts[p] = (plazoCounts[p] || 0) + 1;
@@ -272,7 +280,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   const distribucionBancos = useMemo(() => {
     const stats: Record<string, { nombre: string; count: number; volumen: number; tasaSum: number }> = {};
     filteredSimulaciones.forEach((s) => {
-      const key = s.banco_entidad || 'Banco Comercial';
+      const key = normalizeBancoNombre(s);
       if (!stats[key]) {
         stats[key] = { nombre: key, count: 0, volumen: 0, tasaSum: 0 };
       }
@@ -353,10 +361,11 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       });
       const proto = `COT-SIM-${dateObj.getFullYear()}${String(dateObj.getMonth() + 1).padStart(2, '0')}${String(dateObj.getDate()).padStart(2, '0')}-${(sim.id || '').substring(0, 4).toUpperCase()}`;
 
-      const tipoFin = sim.tipo_financiacion === 'F_COTRIPAR' ? 'F COTRIPAR (Financiación Propia)' : 'Financiación Bancaria (SAC)';
-      const bancoTxt = sim.tipo_financiacion === 'F_COTRIPAR' ? 'F COTRIPAR' : (sim.banco_entidad || 'Banco');
-      const plazoTxt = sim.tipo_financiacion === 'F_COTRIPAR' ? `${sim.plazo_meses || 17} meses` : `${sim.plazo_anios} años`;
-      const tasaTxt = sim.tipo_financiacion === 'F_COTRIPAR'
+      const isCotripar = isCotriparSim(sim);
+      const tipoFin = isCotripar ? 'Financiación Cotripar' : 'Financiación Bancaria (SAC)';
+      const bancoTxt = isCotripar ? 'Financiación Cotripar' : (sim.banco_entidad || 'Banco');
+      const plazoTxt = isCotripar ? `${sim.plazo_meses || 17} meses` : `${sim.plazo_anios} años`;
+      const tasaTxt = isCotripar
         ? `${Number(sim.tasa_anual > 2 ? sim.tasa_anual / 12 : sim.tasa_anual).toFixed(2)}% m.`
         : `${Number(sim.tasa_anual || 0).toFixed(2)}% a.`;
 
@@ -426,7 +435,8 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   };
 
   const handleDownloadHistoricalPDF = async (sim: SimulacionPDF) => {
-    const tasaMensual = sim.tipo_financiacion === 'F_COTRIPAR'
+    const isCotripar = isCotriparSim(sim);
+    const tasaMensual = isCotripar
       ? (sim.tasa_anual > 2 ? sim.tasa_anual / 12 : sim.tasa_anual)
       : undefined;
 
@@ -438,7 +448,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       plazoMeses: sim.plazo_meses,
       mesColocacion: sim.mes_colocacion,
       fechaTopeVencimiento: sim.fecha_tope_vencimiento,
-      tipoFinanciacion: sim.tipo_financiacion,
+      tipoFinanciacion: isCotripar ? 'F_COTRIPAR' : sim.tipo_financiacion,
       frecuencia: (sim.periodicidad === 'semestral' || sim.periodicidad === 'semestral_zafra')
         ? 'semestral'
         : (sim.periodicidad === 'mensual' ? 'mensual' as any : 'anual'),
@@ -453,18 +463,19 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       cuotaAnio1: sim.mayor_cuota_anio1_usd,
       cuotaMayorAnio1: sim.mayor_cuota_anio1_usd,
       totalCuotasAnio1: sim.mayor_cuota_anio1_usd,
-      bancoEntidad: sim.banco_entidad
+      bancoEntidad: isCotripar ? 'Financiación Cotripar' : sim.banco_entidad
     };
 
     const doc = await generarPDFSimulacion(sim, resultadoMock);
     const safeName = sim.cliente_nombre.replace(/\s+/g, '_');
     const safeRuc = (sim.cliente_ruc || '').replace(/\s+/g, '');
-    const prefix = sim.tipo_financiacion === 'F_COTRIPAR' ? 'Cotripar_FCOTRIPAR' : 'Cotripar_Simulacion';
+    const prefix = isCotripar ? 'Cotripar_Financiacion_Cotripar' : 'Cotripar_Simulacion';
     doc.save(`${prefix}_${safeName}${safeRuc ? `_${safeRuc}` : ''}.pdf`);
     showToast('¡PDF histórico descargado con éxito!');
   };
 
   const handleOpenOfferLetterModal = (sim: SimulacionPDF) => {
+    const isCotripar = isCotriparSim(sim);
     const dateObj = sim.created_at ? new Date(sim.created_at) : new Date();
     const year = dateObj.getFullYear();
     const suffix = sim.id ? sim.id.slice(0, 4).toUpperCase() : '001';
@@ -499,7 +510,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       clienteNombre: sim.cliente_nombre || '',
       clienteRuc: sim.cliente_ruc || '',
       vendedorNombre: sim.vendedor_nombre || currentUser?.nombre || 'Asesor Comercial Cotripar',
-      bancoEntidad: sim.banco_entidad || 'Banco Oficial',
+      bancoEntidad: isCotripar ? 'Financiación Cotripar' : (sim.banco_entidad || 'Banco Oficial'),
       maquinaImplemento: sim.maquina_implemento || 'Equipamiento Agrícola Cotripar',
       especificacionTecnica:
         'Maquinaria agrícola con especificaciones estándar del fabricante, lista para entrega técnica y garantía integral.',
@@ -579,6 +590,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       ];
       const fechaEmision = `${dateObj.getDate()} de ${mesesNombres[dateObj.getMonth()]} de ${dateObj.getFullYear()}`;
 
+      const isCotripar = isCotriparSim(offerModalSim);
       const payload: CartaOfertaPayload = {
         numeroOferta: offerFormData.numeroOferta || `OF-${dateObj.getFullYear()}-001`,
         fechaEmision,
@@ -586,7 +598,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         clienteNombre: offerFormData.clienteNombre || offerModalSim.cliente_nombre,
         clienteRuc: offerFormData.clienteRuc || offerModalSim.cliente_ruc || '',
         vendedorNombre: offerFormData.vendedorNombre || offerModalSim.vendedor_nombre,
-        bancoEntidad: offerFormData.bancoEntidad || offerModalSim.banco_entidad,
+        bancoEntidad: isCotripar ? 'Financiación Cotripar' : (offerFormData.bancoEntidad || offerModalSim.banco_entidad),
         maquinaImplemento: offerFormData.maquinaImplemento || offerModalSim.maquina_implemento || 'Maquinaria Agrícola',
         especificacionTecnica: offerFormData.especificacionTecnica,
         cantidad: Number(offerFormData.cantidad) || 1,
@@ -604,11 +616,11 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         gastoAdminUSD: offerModalSim.gasto_admin_usd,
         mayorCuotaAnio1USD: offerModalSim.mayor_cuota_anio1_usd,
         totalPagadoUSD: offerModalSim.total_pagado_usd,
-        tipoFinanciacion: offerModalSim.tipo_financiacion,
+        tipoFinanciacion: isCotripar ? 'F_COTRIPAR' : offerModalSim.tipo_financiacion,
         mesColocacion: offerModalSim.mes_colocacion,
         fechaTopeVencimiento: offerModalSim.fecha_tope_vencimiento,
         plazoMeses: offerModalSim.plazo_meses,
-        tasaMensual: offerModalSim.tipo_financiacion === 'F_COTRIPAR'
+        tasaMensual: isCotripar
           ? (offerModalSim.tasa_anual > 2 ? offerModalSim.tasa_anual / 12 : offerModalSim.tasa_anual)
           : undefined
       };
@@ -631,6 +643,11 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       setIsGeneratingOffer(false);
     }
   };
+
+  // Guard: sellers cannot access History, but admin and coordinador can
+  if (!currentUser || (currentUser.rol !== 'admin' && currentUser.rol !== 'coordinador')) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
@@ -1092,10 +1109,10 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       </td>
 
                       <td className="py-3 px-3 whitespace-nowrap">
-                        {sim.tipo_financiacion === 'F_COTRIPAR' ? (
+                        {isCotriparSim(sim) ? (
                           <div>
                             <span className="inline-flex items-center gap-1 font-extrabold text-cotripar-700 bg-cotripar-50 border border-cotripar-200 px-2 py-0.5 rounded-md text-[11px]">
-                              🔴 F COTRIPAR
+                              Financiación Cotripar
                             </span>
                             <span className="text-[10px] text-slate-500 block mt-0.5 font-semibold">
                               {Number(sim.tasa_anual > 2 ? sim.tasa_anual / 12 : sim.tasa_anual).toFixed(2)}% mensual
@@ -1117,7 +1134,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       </td>
 
                       <td className="py-3 px-3 text-slate-600 whitespace-nowrap">
-                        {sim.tipo_financiacion === 'F_COTRIPAR' ? (
+                        {isCotriparSim(sim) ? (
                           <div>
                             <span className="font-bold text-slate-900">{sim.plazo_meses || 17} meses</span>
                             <span className="text-[10px] text-cotripar-600 block font-medium">Tope: {sim.fecha_tope_vencimiento || '-'}</span>

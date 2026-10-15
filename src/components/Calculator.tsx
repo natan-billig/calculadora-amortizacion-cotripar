@@ -60,7 +60,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
 }) => {
   const { currentUser, isAdmin, isCoordinatorOrAdmin } = useAuth();
 
-  // Mode Selection: Financiación Bancaria vs F COTRIPAR
+  // Mode Selection: Financiación Bancaria vs Financiación Cotripar
   const [tipoFinanciacion, setTipoFinanciacion] = useState<TipoFinanciacion>('BANCARIA');
 
   // Marcas de Productos from Supabase
@@ -89,7 +89,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const [frecuencia, setFrecuencia] = useState<FrecuenciaPago>('anual');
   const [modalidadSemestral, setModalidadSemestral] = useState<ModalidadSemestral>('zafra_interes_primero');
 
-  // F COTRIPAR Mode Inputs (Matriz 2026-2028)
+  // Financiación Cotripar Mode Inputs (Matriz 2026-2028)
   const [mesColocacion, setMesColocacion] = useState<string>('Octubre 2026');
   const [plazoMeses, setPlazoMeses] = useState<number>(17);
   const [periodicidadCotripar, setPeriodicidadCotripar] = useState<PeriodicidadCotripar>('mensual');
@@ -199,7 +199,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
     fetchBancos();
   }, []);
 
-  // F COTRIPAR Block info and dynamic rate
+  // Financiación Cotripar Block info and dynamic rate
   const infoBloqueActivo = useMemo(() => {
     return getMatrizBloqueInfo(mesColocacion);
   }, [mesColocacion]);
@@ -478,7 +478,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       maquina_implemento: maquinaFinal,
       capital_usd: resultado.capital,
       gasto_admin_usd: resultado.gastoAdmin,
-      banco_entidad: tipoFinanciacion === 'F_COTRIPAR' ? 'F COTRIPAR (Financiación Propia)' : selectedBancoNombre,
+      banco_entidad: tipoFinanciacion === 'F_COTRIPAR' ? 'Financiación Cotripar' : selectedBancoNombre,
       tasa_anual: resultado.tasaAnual,
       plazo_anios: resultado.plazoAnios,
       periodicidad: tipoFinanciacion === 'F_COTRIPAR' ? periodicidadCotripar : resultado.frecuencia,
@@ -513,7 +513,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       // Trigger automatic file download
       const safeName = clienteFinal.replace(/\s+/g, '_');
       const safeRuc = rucFinal.replace(/\s+/g, '');
-      const prefix = tipoFinanciacion === 'F_COTRIPAR' ? 'Cotripar_FCOTRIPAR' : 'Cotripar_Simulacion';
+      const prefix = tipoFinanciacion === 'F_COTRIPAR' ? 'Cotripar_Financiacion_Cotripar' : 'Cotripar_Simulacion';
       const filename = `${prefix}_${safeName}_${safeRuc}.pdf`;
       doc.save(filename);
 
@@ -551,7 +551,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
     <div className="py-2 sm:py-6">
       {/* Centralized Card (Mobile & Desktop Perfect) */}
       <div className="max-w-xl mx-auto w-full bg-white p-5 sm:p-7 rounded-3xl border border-slate-200 shadow-md space-y-5">
-        {/* Mode Selector: Financiación Bancaria vs F COTRIPAR */}
+        {/* Mode Selector: Financiación Bancaria vs Financiación Cotripar */}
         <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-100 rounded-2xl border border-slate-200">
           <button
             type="button"
@@ -563,7 +563,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
             }`}
           >
             <Building2 className={`w-4 h-4 ${tipoFinanciacion === 'BANCARIA' ? 'text-cotripar-700' : 'text-slate-400'}`} />
-            <span>🏦 Financiación Bancaria</span>
+            <span>Financiación Bancaria</span>
           </button>
 
           <button
@@ -575,8 +575,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 : 'text-slate-500 hover:text-cotripar-700 hover:bg-slate-200/50'
             }`}
           >
-            <span className="w-2.5 h-2.5 rounded-full bg-red-400 animate-pulse" />
-            <span>🔴 F COTRIPAR</span>
+            <Sparkles className={`w-4 h-4 ${tipoFinanciacion === 'F_COTRIPAR' ? 'text-white' : 'text-cotripar-700'}`} />
+            <span>Financiación Cotripar</span>
           </button>
         </div>
 
@@ -588,7 +588,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight">
-                {tipoFinanciacion === 'F_COTRIPAR' ? 'Financiación Propia F COTRIPAR' : 'Parámetros del Crédito'}
+                {tipoFinanciacion === 'F_COTRIPAR' ? 'Financiación Cotripar' : 'Parámetros del Crédito'}
               </h2>
               <p className="text-[11px] text-slate-400 font-medium">
                 {tipoFinanciacion === 'F_COTRIPAR'
@@ -1028,7 +1028,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 </div>
               </div>
 
-              {/* D. Periodicidad / Modalidad de Pago en F COTRIPAR */}
+              {/* D. Periodicidad / Modalidad de Pago en Financiación Cotripar */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700 block">
                   Periodicidad / Modalidad de Pago
@@ -1101,7 +1101,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
               <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-center justify-between text-xs">
                 <div>
                   <span className="font-extrabold text-emerald-900 block">Gasto Administrativo:</span>
-                  <span className="text-[10px] text-emerald-700">0% Exento en Financiación Propia F COTRIPAR</span>
+                  <span className="text-[10px] text-emerald-700">0% Exento en Financiación Cotripar</span>
                 </div>
                 <span className="font-black text-emerald-800 text-sm">
                   $ 0 (Exento)
@@ -1400,7 +1400,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 <span className="text-slate-500">Modalidad / Tasa:</span>
                 <span className="font-semibold text-slate-800">
                   {successModalData.resultado.tipoFinanciacion === 'F_COTRIPAR'
-                    ? `F COTRIPAR (${successModalData.resultado.plazoMeses}m • ${successModalData.resultado.tasaMensual?.toFixed(2)}% mes)`
+                    ? `Financiación Cotripar (${successModalData.resultado.plazoMeses}m • ${successModalData.resultado.tasaMensual?.toFixed(2)}% mes)`
                     : `${successModalData.banco} (${successModalData.resultado.tasaAnual}%)`}
                 </span>
               </div>

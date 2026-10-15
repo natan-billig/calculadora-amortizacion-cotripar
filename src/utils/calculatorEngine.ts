@@ -181,7 +181,7 @@ export function getMatrizBloqueInfo(mesColocacionStr?: string): MatrizBloqueInfo
   const mesName = (parts[0] || 'Octubre').toLowerCase();
   const anio = parseInt(parts[1], 10) || 2026;
 
-  // Bloque 1: Marzo a Agosto -> Vence 31/08 del año subsiguiente (anio + 1)
+  // Bloque 1: Marzo a Agosto -> Vence 20/08 del año subsiguiente (anio + 1)
   // Bloque 2: Septiembre a Febrero -> Vence 20/03 de dos años posteriores
   // Nota: si colocación es Ene/Feb del año Y, pertenece a la ventana de Septiembre Y-1, por lo que vence 20/03/(anio + 1).
 
@@ -192,27 +192,27 @@ export function getMatrizBloqueInfo(mesColocacionStr?: string): MatrizBloqueInfo
   if (mesName.startsWith('mar')) {
     bloque = 'Bloque 1';
     plazoMaximo = 18;
-    fechaTopeVencimiento = `31/08/${anio + 1}`;
+    fechaTopeVencimiento = `20/08/${anio + 1}`;
   } else if (mesName.startsWith('abr')) {
     bloque = 'Bloque 1';
     plazoMaximo = 17;
-    fechaTopeVencimiento = `31/08/${anio + 1}`;
+    fechaTopeVencimiento = `20/08/${anio + 1}`;
   } else if (mesName.startsWith('may')) {
     bloque = 'Bloque 1';
     plazoMaximo = 16;
-    fechaTopeVencimiento = `31/08/${anio + 1}`;
+    fechaTopeVencimiento = `20/08/${anio + 1}`;
   } else if (mesName.startsWith('jun')) {
     bloque = 'Bloque 1';
     plazoMaximo = 15;
-    fechaTopeVencimiento = `31/08/${anio + 1}`;
+    fechaTopeVencimiento = `20/08/${anio + 1}`;
   } else if (mesName.startsWith('jul')) {
     bloque = 'Bloque 1';
     plazoMaximo = 14;
-    fechaTopeVencimiento = `31/08/${anio + 1}`;
+    fechaTopeVencimiento = `20/08/${anio + 1}`;
   } else if (mesName.startsWith('ago')) {
     bloque = 'Bloque 1';
     plazoMaximo = 12; // Plazo Mínimo del Bloque 1
-    fechaTopeVencimiento = `31/08/${anio + 1}`;
+    fechaTopeVencimiento = `20/08/${anio + 1}`;
   } else if (mesName.startsWith('sep') || mesName.startsWith('set')) {
     bloque = 'Bloque 2';
     plazoMaximo = 18;
@@ -260,7 +260,7 @@ export const getTasaMensualCotripar = (plazoMeses: number): number => {
 };
 
 /**
- * Calculadora Oficial F COTRIPAR (Financiación Propia Directa hasta 18 meses).
+ * Calculadora Oficial Financiación Cotripar (Financiación Propia Directa hasta 18 meses).
  * - Sin gasto administrativo (0% - Exento).
  * - Tasa mensual automática: 0.60% mensual si plazo <= 12 meses; 0.80% mensual si 13 a 18 meses.
  * - IVA de 10% exclusivamente sobre los intereses.
@@ -284,7 +284,7 @@ export function calcularFCotripar(
   const tasaMensual = getTasaMensualCotripar(plazo);
   const tasaAnual = tasaMensual * 12; // Equivalente nominal anual (7.20% o 9.60%)
 
-  // 0% Gasto Administrativo en F COTRIPAR
+  // 0% Gasto Administrativo en Financiación Cotripar
   const gastoAdmin = 0;
 
   const cronograma: CronogramaPeriodo[] = [];
@@ -452,7 +452,7 @@ export function calcularFCotripar(
     cuotaAnio1: cuotaMayorAnio1,
     cuotaMayorAnio1,
     totalCuotasAnio1,
-    bancoEntidad: 'F COTRIPAR (Financiación Propia)',
+    bancoEntidad: 'Financiación Cotripar',
     maquinaImplemento,
     items,
     anticipoUSD,

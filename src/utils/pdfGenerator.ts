@@ -103,13 +103,13 @@ export async function generarPDFSimulacion(
   doc.text('División de Maquinarias e Implementos Agrícolas • RUC: 80019076-9 • Paraguay', leftX, 22.5);
 
   // Top Right Protocol & Metadata
-  const isCotripar = simulacion.tipo_financiacion === 'F_COTRIPAR' || resultado.tipoFinanciacion === 'F_COTRIPAR';
+  const isCotripar = simulacion.tipo_financiacion === 'F_COTRIPAR' || resultado.tipoFinanciacion === 'F_COTRIPAR' || (simulacion.banco_entidad || '').toUpperCase().includes('COTRIPAR');
   const rightX = pageWidth - 14;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.0);
   doc.setTextColor(255, 255, 255);
   const headerTitle = isCotripar
-    ? 'PROFORMA DE FINANCIACIÓN PROPIA — F COTRIPAR (USD)'
+    ? 'PROFORMA DE CRÉDITO — FINANCIACIÓN COTRIPAR (USD)'
     : 'PROYECCIÓN FINANCIERA — SISTEMA ALEMÁN (USD)';
   doc.text(headerTitle, rightX, 8.5, { align: 'right' });
 
@@ -144,13 +144,13 @@ export async function generarPDFSimulacion(
   // Box 1: Client and Parameters Grid
   doc.setFillColor(254, 252, 252);
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, currentY, pageWidth - 28, 35, 2, 2, 'FD');
+  doc.roundedRect(14, currentY, pageWidth - 28, 38, 2, 2, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(200, 16, 46); // Cotripar Red
   const box1Title = isCotripar
-    ? '1. PARÁMETROS DE FINANCIACIÓN DIRECTA F COTRIPAR'
+    ? '1. PARÁMETROS DE FINANCIACIÓN COTRIPAR'
     : '1. PARÁMETROS DEL CRÉDITO Y DEL CLIENTE';
   doc.text(box1Title, 18, currentY + 5.5);
 
@@ -181,10 +181,10 @@ export async function generarPDFSimulacion(
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text(isCotripar ? 'Modalidad Crédito:' : 'Entidad Bancaria:', colRightLabelX, currentY + 11.5);
+  doc.text(isCotripar ? 'Modalidad / Entidad:' : 'Entidad Bancaria:', colRightLabelX, currentY + 11.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(isCotripar ? 'F COTRIPAR (Financiación Directa)' : (simulacion.banco_entidad || 'Banco Comercial'), colRightValX, currentY + 11.5);
+  doc.text(isCotripar ? 'Financiación Cotripar' : (simulacion.banco_entidad || 'Banco Comercial'), colRightValX, currentY + 11.5);
 
   // Row 2: Y = currentY + 17
   doc.setFont('helvetica', 'normal');
@@ -235,10 +235,7 @@ export async function generarPDFSimulacion(
   doc.text('Capital Solicitado:', colLeftLabelX, currentY + 28);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  const capDesc = isCotripar
-    ? `${formatUSD(simulacion.capital_usd)} (Adm: Exento $ 0)`
-    : `${formatUSD(simulacion.capital_usd)} (Adm: ${formatUSD(simulacion.gasto_admin_usd)})`;
-  doc.text(capDesc, colLeftValX, currentY + 28);
+  doc.text(formatUSD(simulacion.capital_usd), colLeftValX, currentY + 28);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
@@ -247,7 +244,18 @@ export async function generarPDFSimulacion(
   doc.setTextColor(200, 16, 46);
   doc.text(formatUSD(simulacion.mayor_cuota_anio1_usd), colRightValX, currentY + 28);
 
-  currentY += 39;
+  // Row 5: Y = currentY + 33.5
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Gasto Administrativo:', colLeftLabelX, currentY + 33.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  const gastoTxt = isCotripar
+    ? '$ 0 (Exento — Financiación Cotripar)'
+    : `${formatUSD(simulacion.gasto_admin_usd)} (1% sobre capital)`;
+  doc.text(gastoTxt, colLeftValX, currentY + 33.5);
+
+  currentY += 42;
 
   // Box 2: Financial Summary KPI Cards (4 columns)
   const kpiBoxHeight = 16;
@@ -379,7 +387,7 @@ export async function generarPDFSimulacion(
   doc.setTextColor(71, 85, 105);
 
   const avisoLegalTexto = isCotripar
-    ? 'Los cálculos, tasas y valores de cuotas expuestos en esta proforma corresponden al programa oficial de Financiación Propia F COTRIPAR (Ciclo 2026-2028), sujeto a evaluación crediticia por parte de Cotripar S.A. Operación sin gasto administrativo (0% exento) e IVA del 10% aplicado exclusivamente sobre los intereses devengados.'
+    ? 'Los cálculos, tasas y valores de cuotas expuestos en esta proforma corresponden al programa oficial de Financiación Cotripar (Ciclo 2026-2028), sujeto a evaluación crediticia por parte de Cotripar S.A. Operación sin gasto administrativo (0% exento) e IVA del 10% aplicado exclusivamente sobre los intereses devengados.'
     : 'Los cálculos, tasas y valores de cuotas expuestos en este documento son únicamente referenciales y aproximados, teniendo en cuenta un promedio estimado de gastos administrativos del sistema financiero e impuestos vigentes (IVA 10% sobre intereses). Esta proyección no constituye una oferta de crédito vinculante y está sujeta a evaluación y aprobación crediticia por parte de la entidad financiera correspondiente.';
 
   const splitTexto = doc.splitTextToSize(avisoLegalTexto, pageWidth - 34);

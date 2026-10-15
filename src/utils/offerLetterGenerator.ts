@@ -30,7 +30,7 @@ export interface CartaOfertaPayload {
   gastoAdminUSD: number;
   mayorCuotaAnio1USD: number;
   totalPagadoUSD: number;
-  // F COTRIPAR & Marcas (V.1.9)
+  // Financiación Cotripar & Marcas (V.1.9)
   tipoFinanciacion?: string;
   mesColocacion?: string;
   fechaTopeVencimiento?: string;
@@ -127,6 +127,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   const pageHeight = doc.internal.pageSize.getHeight(); // 297mm
   const marginX = 14;
   const contentWidth = pageWidth - marginX * 2; // 182mm
+  const isCotripar = data.tipoFinanciacion === 'F_COTRIPAR' || (data.bancoEntidad || '').toUpperCase().includes('COTRIPAR');
 
   // 1. CABEÇALHO INSTITUCIONAL SUPERIOR (TOPO DA PÁGINA A4)
   // Faixa Superior Vermelha Cotripar (#C8102E -> RGB: 200, 16, 46)
@@ -262,15 +263,16 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.text('ENTIDAD FINANCIERA:', cRightX, currentY + 6);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(data.bancoEntidad || 'Banco Comercial', cRightValX, currentY + 6);
+  const entidadTxt = isCotripar ? 'Financiación Cotripar' : (data.bancoEntidad || 'Banco Comercial');
+  doc.text(entidadTxt, cRightValX, currentY + 6);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
   doc.text('MODALIDAD CRÉDITO:', cRightX, currentY + 11.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  const modTxt = data.tipoFinanciacion === 'F_COTRIPAR'
-    ? 'F COTRIPAR (Financiación Directa)'
+  const modTxt = isCotripar
+    ? 'Financiación Cotripar'
     : 'Financiación Bancaria (SAC)';
   doc.text(modTxt, cRightValX, currentY + 11.5);
 
@@ -454,12 +456,11 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setFillColor(200, 16, 46);
   doc.rect(boxAX, currentY, 1.5, boxAHeight, 'F');
 
-  const isCotripar = data.tipoFinanciacion === 'F_COTRIPAR';
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.2);
   doc.setTextColor(200, 16, 46);
   doc.text(
-    isCotripar ? 'Condiciones de Financiación F COTRIPAR (Directa)' : 'Condiciones de Financiación Bancaria (Ref.)',
+    isCotripar ? 'Condiciones de Financiación Cotripar' : 'Condiciones de Financiación Bancaria (Ref.)',
     boxAX + 3.5,
     currentY + 4.5
   );
@@ -477,7 +478,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
 
   const finLines = isCotripar
     ? [
-        `• Modalidad: F COTRIPAR (Financiación Directa Propia)`,
+        `• Modalidad: Financiación Cotripar`,
         `• Capital a Financiar: ${formatUSD(totalAFinanciar)} (Neto de Anticipo)`,
         `• Plazo: ${data.plazoMeses || Math.round(data.plazoAnios * 12)} meses (${freqTexto}) • Tope: ${data.fechaTopeVencimiento || '20/03/2028'}`,
         `• Tasa Mensual Ref.: ${data.tasaMensual ? data.tasaMensual.toFixed(2) : (data.tasaAnual > 2 ? (data.tasaAnual / 12).toFixed(2) : data.tasaAnual.toFixed(2))}% mensual (+ IVA 10% s/ int.)`,

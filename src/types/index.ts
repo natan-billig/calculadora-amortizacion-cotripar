@@ -1,4 +1,4 @@
-export const APP_VERSION = 'V.2.0';
+export const APP_VERSION = 'V.2.1';
 
 export interface ItemMaquinaria {
   id: string;

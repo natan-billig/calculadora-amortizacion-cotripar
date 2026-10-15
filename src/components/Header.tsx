@@ -42,7 +42,7 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
                 </span>
               </span>
               <span className="text-xs text-slate-500 font-medium">
-                Calculadora Financiera de Amortización • Sistema Alemán
+                Calculadora Financiera
               </span>
             </div>
           </div>
