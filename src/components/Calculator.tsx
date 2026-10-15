@@ -58,7 +58,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
   showToast,
   initialSimulation
 }) => {
-  const { currentUser, isAdmin } = useAuth();
+  const { currentUser, isAdmin, isCoordinatorOrAdmin } = useAuth();
 
   // Mode Selection: Financiación Bancaria vs F COTRIPAR
   const [tipoFinanciacion, setTipoFinanciacion] = useState<TipoFinanciacion>('BANCARIA');
@@ -653,7 +653,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 <span>Equipos o Implementos Cotizados *</span>
               </label>
               <div className="flex items-center gap-2">
-                {isAdmin && (
+                {isCoordinatorOrAdmin && (
                   <button
                     type="button"
                     onClick={onOpenBrandManager}

@@ -63,7 +63,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ showToast, onLoginSucc
           <div className="text-center">
             <h2 className="text-base font-bold text-slate-800">Acceso al Sistema</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Ingrese con sus credenciales de asesor o administrador
+              Ingrese con sus credenciales de asesor, coordinador o administrador
             </p>
           </div>
 

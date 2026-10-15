@@ -39,8 +39,8 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
 }) => {
   const { currentUser } = useAuth();
 
-  // Strict admin guard: sellers cannot access History
-  if (!currentUser || currentUser.rol !== 'admin') {
+  // Guard: sellers cannot access History, but admin and coordinador can
+  if (!currentUser || (currentUser.rol !== 'admin' && currentUser.rol !== 'coordinador')) {
     return null;
   }
 
@@ -399,6 +399,11 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   };
 
   const handleDelete = async (id: string, clienteNombre: string) => {
+    if (!currentUser || currentUser.rol !== 'admin') {
+      showToast('Acceso denegado: solo Administradores pueden eliminar registros del historial.');
+      return;
+    }
+
     if (!window.confirm(`¿Está seguro de eliminar la simulación de "${clienteNombre}"?`)) {
       return;
     }
@@ -1135,7 +1140,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
 
                       <td className="py-3 px-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1.5">
-                          {currentUser?.rol === 'admin' && (
+                          {(currentUser?.rol === 'admin' || currentUser?.rol === 'coordinador') && (
                             <button
                               onClick={() => handleOpenOfferLetterModal(sim)}
                               className="px-2.5 py-1 text-cotripar-700 hover:text-white hover:bg-cotripar-700 bg-cotripar-50 border border-cotripar-200 rounded-lg transition-all duration-150 flex items-center gap-1 font-bold text-xs shadow-xs"
@@ -1162,14 +1167,16 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                             <ExternalLink className="w-4 h-4" />
                           </button>
 
-                          <button
-                            onClick={() => sim.id && handleDelete(sim.id, sim.cliente_nombre)}
-                            disabled={deletingId === sim.id}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Eliminar registro"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {currentUser?.rol === 'admin' && (
+                            <button
+                              onClick={() => sim.id && handleDelete(sim.id, sim.cliente_nombre)}
+                              disabled={deletingId === sim.id}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Eliminar registro"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

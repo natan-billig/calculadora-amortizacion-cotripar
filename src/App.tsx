@@ -13,7 +13,7 @@ import type { SimulacionPDF } from './types';
 import { APP_VERSION } from './types';
 
 const MainApp: React.FC = () => {
-  const { currentUser, isAdmin, isLoading } = useAuth();
+  const { currentUser, isAdmin, isCoordinatorOrAdmin, isLoading } = useAuth();
   const [currentTab, setCurrentTab] = useState<'calculadora' | 'historial' | 'tasas' | 'usuarios'>('calculadora');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [loadedSimulation, setLoadedSimulation] = useState<SimulacionPDF | null>(null);
@@ -27,12 +27,19 @@ const MainApp: React.FC = () => {
     }, 3000);
   };
 
-  // If user is not admin and somehow navigates to admin tabs, redirect to calculadora
+  // Tab access guard:
+  // - Admin: 'calculadora' | 'historial' | 'tasas' | 'usuarios'
+  // - Coordinador: 'calculadora' | 'historial'
+  // - Vendedor: 'calculadora'
   useEffect(() => {
-    if (currentUser && !isAdmin && currentTab !== 'calculadora') {
-      setCurrentTab('calculadora');
+    if (currentUser) {
+      if (currentUser.rol === 'vendedor' && currentTab !== 'calculadora') {
+        setCurrentTab('calculadora');
+      } else if (currentUser.rol === 'coordinador' && (currentTab === 'tasas' || currentTab === 'usuarios')) {
+        setCurrentTab('calculadora');
+      }
     }
-  }, [currentUser, isAdmin, currentTab]);
+  }, [currentUser, currentTab]);
 
   const handleLoadSimulation = (sim: SimulacionPDF) => {
     setLoadedSimulation(sim);
@@ -85,7 +92,7 @@ const MainApp: React.FC = () => {
           />
         )}
 
-        {currentTab === 'historial' && isAdmin && (
+        {currentTab === 'historial' && isCoordinatorOrAdmin && (
           <HistoryModal
             onLoadSimulation={handleLoadSimulation}
             showToast={showToast}
@@ -101,8 +108,8 @@ const MainApp: React.FC = () => {
         )}
       </main>
 
-      {/* Brand Manager Modal (Admin Only) */}
-      {isAdmin && (
+      {/* Brand Manager Modal (Admin and Coordinador) */}
+      {isCoordinatorOrAdmin && (
         <BrandManagerModal
           isOpen={isBrandManagerOpen}
           onClose={() => setIsBrandManagerOpen(false)}

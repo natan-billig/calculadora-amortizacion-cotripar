@@ -13,7 +13,7 @@ interface HeaderProps {
 
 
 export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showToast, onOpenBrandManager }) => {
-  const { currentUser, isAdmin, logout } = useAuth();
+  const { currentUser, isAdmin, isCoordinatorOrAdmin, logout } = useAuth();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
 
@@ -47,8 +47,14 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
             </div>
           </div>
 
-          {/* Navigation Tabs - ONLY for Admin! Sellers do not see Historial, Tasas, or Usuarios */}
-          {isAdmin && (
+          {/* Navigation Tabs Desktop:
+              - Calculadora: visível para todos (admin, coordinador, vendedor)
+              - Historial: visível para admin e coordinador (isCoordinatorOrAdmin)
+              - Tasas Bancarias: visível ESTRITAMENTE para admin
+              - Usuarios: visível ESTRITAMENTE para admin
+              - Marcas: visível para admin e coordinador (isCoordinatorOrAdmin)
+          */}
+          {currentUser && (
             <nav className="hidden md:flex items-center space-x-1">
               <button
                 onClick={() => setCurrentTab('calculadora')}
@@ -62,50 +68,58 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
                 <span>Calculadora</span>
               </button>
 
-              <button
-                onClick={() => setCurrentTab('historial')}
-                className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-                  currentTab === 'historial'
-                    ? 'bg-cotripar-700 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <History className="w-4 h-4" />
-                <span>Historial</span>
-              </button>
+              {isCoordinatorOrAdmin && (
+                <button
+                  onClick={() => setCurrentTab('historial')}
+                  className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                    currentTab === 'historial'
+                      ? 'bg-cotripar-700 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <History className="w-4 h-4" />
+                  <span>Historial</span>
+                </button>
+              )}
 
-              <button
-                onClick={() => setCurrentTab('tasas')}
-                className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-                  currentTab === 'tasas'
-                    ? 'bg-cotripar-700 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <Settings className="w-4 h-4" />
-                <span>Tasas Bancarias</span>
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setCurrentTab('tasas')}
+                  className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                    currentTab === 'tasas'
+                      ? 'bg-cotripar-700 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <Settings className="w-4 h-4" />
+                  <span>Tasas Bancarias</span>
+                </button>
+              )}
 
-              <button
-                onClick={() => setCurrentTab('usuarios')}
-                className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-                  currentTab === 'usuarios'
-                    ? 'bg-cotripar-700 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <Users className="w-4 h-4" />
-                <span>Usuarios</span>
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setCurrentTab('usuarios')}
+                  className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                    currentTab === 'usuarios'
+                      ? 'bg-cotripar-700 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  <span>Usuarios</span>
+                </button>
+              )}
 
-              <button
-                onClick={onOpenBrandManager}
-                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                title="Gestionar Marcas de Productos"
-              >
-                <Tag className="w-4 h-4 text-cotripar-700" />
-                <span>Marcas</span>
-              </button>
+              {isCoordinatorOrAdmin && (
+                <button
+                  onClick={onOpenBrandManager}
+                  className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  title="Gestionar Marcas de Productos"
+                >
+                  <Tag className="w-4 h-4 text-cotripar-700" />
+                  <span>Marcas</span>
+                </button>
+              )}
             </nav>
           )}
 
@@ -140,8 +154,14 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
                     <p className="text-xs font-bold text-slate-800 leading-none">
                       {currentUser.nombre}
                     </p>
-                    <p className="text-[10px] text-cotripar-700 font-semibold capitalize mt-0.5">
-                      {currentUser.rol === 'admin' ? 'Administrador' : 'Vendedor'}
+                    <p className="text-[10px] font-bold mt-0.5">
+                      {currentUser.rol === 'admin' ? (
+                        <span className="text-amber-700 font-bold">Administrador</span>
+                      ) : currentUser.rol === 'coordinador' ? (
+                        <span className="text-indigo-700 font-bold">Coordinador de Ventas</span>
+                      ) : (
+                        <span className="text-slate-600">Asesor Comercial</span>
+                      )}
                     </p>
                   </div>
                   <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
@@ -155,10 +175,18 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
                     <div className="px-3.5 py-2 border-b border-slate-100">
                       <p className="text-xs font-bold text-slate-800">{currentUser.nombre}</p>
                       <p className="text-[11px] text-slate-500">@{currentUser.username}</p>
-                      <span className={`inline-block mt-1 px-2 py-0.5 text-[9px] font-bold rounded-full ${
-                        currentUser.rol === 'admin' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
+                      <span className={`inline-block mt-1 px-2.5 py-0.5 text-[9px] font-bold rounded-full ${
+                        currentUser.rol === 'admin'
+                          ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                          : currentUser.rol === 'coordinador'
+                            ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                            : 'bg-slate-100 text-slate-700 border border-slate-200'
                       }`}>
-                        {currentUser.rol === 'admin' ? 'Acceso Total (Admin)' : 'Asesor de Ventas'}
+                        {currentUser.rol === 'admin'
+                          ? 'Administrador'
+                          : currentUser.rol === 'coordinador'
+                            ? 'Coordinador de Ventas'
+                            : 'Asesor Comercial'}
                       </span>
                     </div>
 
@@ -206,8 +234,8 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
           </div>
         </div>
 
-        {/* Mobile Navigation Bar - ONLY if Admin */}
-        {isAdmin && (
+        {/* Mobile Navigation Bar */}
+        {currentUser && (
           <div className="md:hidden flex items-center justify-around py-2 border-t border-slate-100 text-xs">
             <button
               onClick={() => setCurrentTab('calculadora')}
@@ -218,41 +246,53 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, showT
               <Calculator className="w-4 h-4 mb-0.5" />
               <span>Calculadora</span>
             </button>
-            <button
-              onClick={() => setCurrentTab('historial')}
-              className={`flex flex-col items-center py-1 px-2 rounded ${
-                currentTab === 'historial' ? 'text-cotripar-700 font-bold' : 'text-slate-500'
-              }`}
-            >
-              <History className="w-4 h-4 mb-0.5" />
-              <span>Historial</span>
-            </button>
-            <button
-              onClick={() => setCurrentTab('tasas')}
-              className={`flex flex-col items-center py-1 px-2 rounded ${
-                currentTab === 'tasas' ? 'text-cotripar-700 font-bold' : 'text-slate-500'
-              }`}
-            >
-              <Settings className="w-4 h-4 mb-0.5" />
-              <span>Tasas</span>
-            </button>
-            <button
-              onClick={() => setCurrentTab('usuarios')}
-              className={`flex flex-col items-center py-1 px-2 rounded ${
-                currentTab === 'usuarios' ? 'text-cotripar-700 font-bold' : 'text-slate-500'
-              }`}
-            >
-              <Users className="w-4 h-4 mb-0.5" />
-              <span>Usuarios</span>
-            </button>
-            <button
-              onClick={onOpenBrandManager}
-              className="flex flex-col items-center py-1 px-2 rounded text-slate-500 hover:text-cotripar-700"
-              title="Gestionar Marcas"
-            >
-              <Tag className="w-4 h-4 mb-0.5" />
-              <span>Marcas</span>
-            </button>
+
+            {isCoordinatorOrAdmin && (
+              <button
+                onClick={() => setCurrentTab('historial')}
+                className={`flex flex-col items-center py-1 px-2 rounded ${
+                  currentTab === 'historial' ? 'text-cotripar-700 font-bold' : 'text-slate-500'
+                }`}
+              >
+                <History className="w-4 h-4 mb-0.5" />
+                <span>Historial</span>
+              </button>
+            )}
+
+            {isAdmin && (
+              <button
+                onClick={() => setCurrentTab('tasas')}
+                className={`flex flex-col items-center py-1 px-2 rounded ${
+                  currentTab === 'tasas' ? 'text-cotripar-700 font-bold' : 'text-slate-500'
+                }`}
+              >
+                <Settings className="w-4 h-4 mb-0.5" />
+                <span>Tasas</span>
+              </button>
+            )}
+
+            {isAdmin && (
+              <button
+                onClick={() => setCurrentTab('usuarios')}
+                className={`flex flex-col items-center py-1 px-2 rounded ${
+                  currentTab === 'usuarios' ? 'text-cotripar-700 font-bold' : 'text-slate-500'
+                }`}
+              >
+                <Users className="w-4 h-4 mb-0.5" />
+                <span>Usuarios</span>
+              </button>
+            )}
+
+            {isCoordinatorOrAdmin && (
+              <button
+                onClick={onOpenBrandManager}
+                className="flex flex-col items-center py-1 px-2 rounded text-slate-500 hover:text-cotripar-700"
+                title="Gestionar Marcas"
+              >
+                <Tag className="w-4 h-4 mb-0.5" />
+                <span>Marcas</span>
+              </button>
+            )}
           </div>
         )}
       </div>

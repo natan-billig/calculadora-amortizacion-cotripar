@@ -1,4 +1,4 @@
-export const APP_VERSION = 'V.1.9';
+export const APP_VERSION = 'V.2.0';
 
 export interface ItemMaquinaria {
   id: string;
@@ -19,7 +19,10 @@ export type TipoFinanciacion = 'BANCARIA' | 'F_COTRIPAR';
 export type PeriodicidadCotripar = 'mensual' | 'semestral_zafra' | 'pago_unico';
 export type EsquemaSemestralCotripar = 'amortizacion_constante' | 'interes_primero';
 
-export type UserRole = 'admin' | 'vendedor';
+export type UserRole = 'admin' | 'coordinador' | 'vendedor';
+
+export const isAdminRole = (role?: UserRole | string | null): boolean => role === 'admin';
+export const isCoordinatorOrAdminRole = (role?: UserRole | string | null): boolean => role === 'admin' || role === 'coordinador';
 
 export interface AppUser {
   id: string;

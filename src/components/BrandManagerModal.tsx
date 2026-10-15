@@ -27,7 +27,7 @@ export const BrandManagerModal: React.FC<BrandManagerModalProps> = ({
   showToast,
   onBrandsChanged
 }) => {
-  const { currentUser, isAdmin } = useAuth();
+  const { currentUser } = useAuth();
 
   const [marcas, setMarcas] = useState<MarcaProducto[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -65,7 +65,7 @@ export const BrandManagerModal: React.FC<BrandManagerModalProps> = ({
   }, [isOpen]);
 
   if (!isOpen) return null;
-  if (!currentUser || !isAdmin) return null;
+  if (!currentUser || (currentUser.rol !== 'admin' && currentUser.rol !== 'coordinador')) return null;
 
   const handleAddMarca = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -205,7 +205,7 @@ export const BrandManagerModal: React.FC<BrandManagerModalProps> = ({
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 Gestión de Marcas de Productos
                 <span className="text-[10px] font-semibold bg-cotripar-500/30 text-cotripar-200 px-2 py-0.5 rounded-full border border-cotripar-400/30">
-                  Admin
+                  {currentUser.rol === 'admin' ? 'Admin' : 'Coordinación'}
                 </span>
               </h3>
               <p className="text-[11px] text-slate-300">

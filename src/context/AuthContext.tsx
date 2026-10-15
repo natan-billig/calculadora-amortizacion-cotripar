@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 interface AuthContextType {
   currentUser: AppUser | null;
   isAdmin: boolean;
+  isCoordinatorOrAdmin: boolean;
   isLoading: boolean;
   login: (username: string, passwordHash: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
@@ -118,11 +119,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await fetchUsers();
   };
 
+  const isAdmin = currentUser?.rol === 'admin';
+  const isCoordinatorOrAdmin = currentUser?.rol === 'admin' || currentUser?.rol === 'coordinador';
+
   return (
     <AuthContext.Provider
       value={{
         currentUser,
-        isAdmin: currentUser?.rol === 'admin',
+        isAdmin,
+        isCoordinatorOrAdmin,
         isLoading,
         login,
         logout,
