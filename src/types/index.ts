@@ -1,4 +1,4 @@
-export const APP_VERSION = 'V.2.3';
+export const APP_VERSION = 'V.2.4';
 
 export interface ItemMaquinaria {
   id: string;
@@ -59,70 +59,70 @@ export const BANCOS_OFICIALES_COTRIPAR: BancoOficialData[] = [
     tasa_anual: 7.50,
     tiene_convenio: true,
     modalidad_permitida: 'Semestral y Anual',
-    tasas_por_plazo: { "1": null, "2": 6.90, "3": 6.95, "4": 7.00, "5": 7.50, "6": 7.50 }
+    tasas_por_plazo: { "1": null, "1.5": 6.90, "2": 6.90, "3": 6.95, "4": 7.00, "5": 7.50, "6": 7.50 }
   },
   {
     entidad: "Financiera Paraguayo Japonesa",
     tasa_anual: 6.90,
     tiene_convenio: true,
     modalidad_permitida: 'Semestral',
-    tasas_por_plazo: { "1": null, "2": 5.75, "3": 6.25, "4": 6.50, "5": 6.90, "6": 7.00 }
+    tasas_por_plazo: { "1": null, "1.5": 5.75, "2": 5.75, "3": 6.25, "4": 6.50, "5": 6.90, "6": 7.00 }
   },
   {
     entidad: "Banco GNB",
     tasa_anual: 7.20,
     tiene_convenio: true,
     modalidad_permitida: 'Semestral',
-    tasas_por_plazo: { "1": null, "2": 6.50, "3": 7.00, "4": 7.10, "5": 7.20, "6": 7.30 }
+    tasas_por_plazo: { "1": null, "1.5": 6.50, "2": 6.50, "3": 7.00, "4": 7.10, "5": 7.20, "6": 7.30 }
   },
   {
     entidad: "Banco Basa",
     tasa_anual: 7.10,
     tiene_convenio: true,
     modalidad_permitida: 'Semestral',
-    tasas_por_plazo: { "1": null, "2": null, "3": 6.75, "4": 7.00, "5": 7.10, "6": 7.40 }
+    tasas_por_plazo: { "1": null, "1.5": 6.75, "2": 6.75, "3": 6.75, "4": 7.00, "5": 7.10, "6": 7.40 }
   },
   {
     entidad: "Banco Continental",
     tasa_anual: 8.00,
     tiene_convenio: true,
     modalidad_permitida: 'Semestral y Anual',
-    tasas_por_plazo: { "1": 7.00, "2": 7.30, "3": 7.50, "4": 7.80, "5": 8.00, "6": null }
+    tasas_por_plazo: { "1": 7.00, "1.5": 7.30, "2": 7.30, "3": 7.50, "4": 7.80, "5": 8.00, "6": null }
   },
   {
     entidad: "Bancop",
     tasa_anual: 7.60,
     tiene_convenio: false,
     modalidad_permitida: 'Semestral y Anual',
-    tasas_por_plazo: { "1": null, "2": 6.90, "3": 7.10, "4": 7.40, "5": 7.60, "6": 7.90 }
+    tasas_por_plazo: { "1": null, "1.5": 6.90, "2": 6.90, "3": 7.10, "4": 7.40, "5": 7.60, "6": 7.90 }
   },
   {
     entidad: "Banco Sudameris",
     tasa_anual: 7.50,
     tiene_convenio: false,
     modalidad_permitida: 'Semestral y Anual',
-    tasas_por_plazo: { "1": null, "2": 7.50, "3": 7.50, "4": 7.50, "5": 7.50, "6": 7.50 }
+    tasas_por_plazo: { "1": null, "1.5": 7.50, "2": 7.50, "3": 7.50, "4": 7.50, "5": 7.50, "6": 7.50 }
   },
   {
     entidad: "Interfisa Banco",
     tasa_anual: 7.40,
     tiene_convenio: false,
     modalidad_permitida: 'Semestral',
-    tasas_por_plazo: { "1": null, "2": 7.40, "3": 7.40, "4": 7.40, "5": 7.40, "6": 7.40 }
+    tasas_por_plazo: { "1": null, "1.5": 7.40, "2": 7.40, "3": 7.40, "4": 7.40, "5": 7.40, "6": 7.40 }
   },
   {
     entidad: "Banco Familiar",
     tasa_anual: 8.75,
     tiene_convenio: false,
     modalidad_permitida: 'Semestral',
-    tasas_por_plazo: { "1": null, "2": null, "3": 8.00, "4": 8.50, "5": 8.75, "6": 9.00 }
+    tasas_por_plazo: { "1": null, "1.5": 8.00, "2": 8.00, "3": 8.00, "4": 8.50, "5": 8.75, "6": 9.00 }
   },
   {
     entidad: "Banco Itaú",
     tasa_anual: 7.00,
     tiene_convenio: false,
     modalidad_permitida: 'Semestral y Anual',
-    tasas_por_plazo: { "1": null, "2": 6.25, "3": 6.50, "4": 6.90, "5": 7.00, "6": null }
+    tasas_por_plazo: { "1": null, "1.5": 6.25, "2": 6.25, "3": 6.50, "4": 6.90, "5": 7.00, "6": null }
   }
 ];
 

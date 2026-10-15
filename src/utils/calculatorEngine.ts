@@ -26,8 +26,10 @@ export function calcularSistemaAleman(
 ): ResultadoAleman {
   const cap = Math.max(0, Number(capital) || 0);
   const tasa = Math.max(0, Number(tasaAnual) || 0);
-  const plazo = Math.max(1, Math.min(6, Math.round(Number(plazoAnios) || 1)));
-  const freq: FrecuenciaPago = frecuencia === 'semestral' ? 'semestral' : 'anual';
+  const rawPlazo = Number(plazoAnios) || 1;
+  const isPlazo18m = Math.abs(rawPlazo - 1.5) < 0.05;
+  const plazo = isPlazo18m ? 1.5 : Math.max(1, Math.min(6, Math.round(rawPlazo)));
+  const freq: FrecuenciaPago = (isPlazo18m || frecuencia === 'semestral') ? 'semestral' : 'anual';
   const esquema: ModalidadSemestral = esquemaSemestral === 'constante' ? 'constante' : 'zafra_interes_primero';
 
   // 1% de Gasto Administrativo sobre el capital solicitado
@@ -39,7 +41,7 @@ export function calcularSistemaAleman(
   let totalCuotas = 0;
 
   if (freq === 'semestral') {
-    const totalSemestres = plazo * 2;
+    const totalSemestres = Math.round(plazo * 2);
     const tasaSemestral = (tasa / 100) / 2;
     const amortizacionAnual = plazo > 0 ? cap / plazo : 0;
     const amortizacionSemestralConstante = totalSemestres > 0 ? cap / totalSemestres : 0;
@@ -52,7 +54,27 @@ export function calcularSistemaAleman(
       let amortizacion = 0;
       let label = '';
 
-      if (esquema === 'zafra_interes_primero') {
+      if (isPlazo18m) {
+        if (esquema === 'zafra_interes_primero') {
+          if (s === 1) {
+            // Semestre 1 (6 meses - Entrezafra): solo interés
+            amortizacion = 0;
+            label = 'Semestre 1 (Interés)';
+          } else if (s === 2) {
+            // Semestre 2 (12 meses - 1ª Amortización)
+            amortizacion = cap / 2;
+            label = 'Semestre 2 (Cap + Int)';
+          } else {
+            // Semestre 3 (18 meses - 2ª Amortización / Quitación Final)
+            amortizacion = saldoInicial;
+            label = 'Semestre 3 (Cap + Int)';
+          }
+        } else {
+          // Constante Semestral (Capital / 3)
+          amortizacion = s === 3 ? saldoInicial : cap / 3;
+          label = `Semestre ${s}`;
+        }
+      } else if (esquema === 'zafra_interes_primero') {
         if (s % 2 !== 0) {
           // Semestre impar: solo interés (período de siembra / entresafra)
           amortizacion = 0;
@@ -63,13 +85,13 @@ export function calcularSistemaAleman(
           label = `Semestre ${s} (Cap + Int)`;
         }
       } else {
-        // Amortización constante semestral
-        amortizacion = amortizacionSemestralConstante;
+        // Amortización constante semestral estándar
+        amortizacion = s === totalSemestres ? saldoInicial : amortizacionSemestralConstante;
         label = `Semestre ${s}`;
       }
 
       const cuota = amortizacion + interes + iva;
-      const saldoFinal = Math.max(0, saldoInicial - amortizacion);
+      const saldoFinal = s === totalSemestres ? 0 : Math.max(0, saldoInicial - amortizacion);
 
       totalIntereses += interes;
       totalIva += iva;
@@ -84,7 +106,7 @@ export function calcularSistemaAleman(
         interes,
         iva,
         cuota,
-        saldoFinal: s === totalSemestres ? 0 : saldoFinal
+        saldoFinal
       });
 
       saldoActual = saldoFinal;

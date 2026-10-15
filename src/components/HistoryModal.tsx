@@ -259,7 +259,8 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     });
     const topBanco = Object.entries(bancoCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '-';
     const topPlazo = Object.entries(plazoCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '-';
-    return { bancoMasSolicitado: topBanco, plazoMasSolicitado: `${topPlazo} años` };
+    const topPlazoLabel = topPlazo === '-' ? '-' : (Math.abs(Number(topPlazo) - 1.5) < 0.05 ? '18 meses' : `${topPlazo} años`);
+    return { bancoMasSolicitado: topBanco, plazoMasSolicitado: topPlazoLabel };
   }, [filteredSimulaciones]);
 
   // BI Breakdown 1: Rendimiento por Asesor
@@ -364,7 +365,10 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       const isCotripar = isCotriparSim(sim);
       const tipoFin = isCotripar ? 'Financiación Cotripar' : 'Financiación Bancaria (SAC)';
       const bancoTxt = isCotripar ? 'Financiación Cotripar' : (sim.banco_entidad || 'Banco');
-      const plazoTxt = isCotripar ? `${sim.plazo_meses || 17} meses` : `${sim.plazo_anios} años`;
+      const plazoNum = Number(sim.plazo_anios);
+      const plazoTxt = isCotripar
+        ? `${sim.plazo_meses || 17} meses`
+        : (Math.abs(plazoNum - 1.5) < 0.05 ? '18 meses' : `${plazoNum} ${plazoNum === 1 ? 'año' : 'años'}`);
       const tasaTxt = isCotripar
         ? `${Number(sim.tasa_anual > 2 ? sim.tasa_anual / 12 : sim.tasa_anual).toFixed(2)}% m.`
         : `${Number(sim.tasa_anual || 0).toFixed(2)}% a.`;
@@ -1147,7 +1151,11 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                           </div>
                         ) : (
                           <div>
-                            <span className="font-semibold">{sim.plazo_anios} años</span>
+                            <span className="font-semibold">
+                              {Math.abs(Number(sim.plazo_anios) - 1.5) < 0.05
+                                ? '18 meses'
+                                : `${sim.plazo_anios} ${Number(sim.plazo_anios) === 1 ? 'año' : 'años'}`}
+                            </span>
                             <span className="text-[10px] text-slate-400 block capitalize">{sim.periodicidad}</span>
                           </div>
                         )}
@@ -1526,7 +1534,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                   <div>
                     <span className="font-bold text-slate-800">Condiciones de Crédito Referenciales Vinculadas:</span>
                     <p className="text-slate-500 text-[11px]">
-                      Plazo: <strong>{offerModalSim.plazo_anios} años</strong> ({offerModalSim.periodicidad} {offerModalSim.modalidad_semestral || ''}) • Tasa: <strong>{formatPercent(offerModalSim.tasa_anual)}</strong> • Mayor Cuota Año 1: <strong>{formatUSD(offerModalSim.mayor_cuota_anio1_usd)}</strong>
+                      Plazo: <strong>{Math.abs(Number(offerModalSim.plazo_anios) - 1.5) < 0.05 ? '18 meses' : `${offerModalSim.plazo_anios} ${Number(offerModalSim.plazo_anios) === 1 ? 'año' : 'años'}`}</strong> ({offerModalSim.periodicidad} {offerModalSim.modalidad_semestral || ''}) • Tasa: <strong>{formatPercent(offerModalSim.tasa_anual)}</strong> • Mayor Cuota Año 1: <strong>{formatUSD(offerModalSim.mayor_cuota_anio1_usd)}</strong>
                     </p>
                   </div>
                 </div>

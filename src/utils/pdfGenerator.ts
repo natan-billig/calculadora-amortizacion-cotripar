@@ -230,9 +230,13 @@ export async function generarPDFSimulacion(
   doc.text(isCotripar ? 'Plazo Total Detectado:' : 'Plazo / Periodicidad:', colRightLabelX, currentY + 21);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
+  const plazoAniosNum = Number(simulacion.plazo_anios);
+  const plazoTexto = Math.abs(plazoAniosNum - 1.5) < 0.05
+    ? '18 meses'
+    : `${plazoAniosNum} ${plazoAniosNum === 1 ? 'año' : 'años'}`;
   const plazoDesc = isCotripar
     ? `${simulacion.plazo_meses || resultado.plazoMeses || 17} Meses (Según última cuota: ${fechaUltimaCuota})`
-    : `${simulacion.plazo_anios} años • ${freqDesc}`;
+    : `${plazoTexto} • ${freqDesc}`;
   doc.text(plazoDesc, colRightValX, currentY + 21);
 
   // Row 4: Y = currentY + 26

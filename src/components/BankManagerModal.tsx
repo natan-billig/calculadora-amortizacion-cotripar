@@ -37,6 +37,7 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
   const [modalidadInput, setModalidadInput] = useState<string>('Semestral y Anual');
   const [tasasPorPlazoInput, setTasasPorPlazoInput] = useState<{
     '1': string;
+    '1.5': string;
     '2': string;
     '3': string;
     '4': string;
@@ -44,6 +45,7 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
     '6': string;
   }>({
     '1': '',
+    '1.5': '',
     '2': '',
     '3': '',
     '4': '',
@@ -83,8 +85,10 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
     setModalidadInput(b.modalidad_permitida || 'Semestral y Anual');
 
     const rates = b.tasas_por_plazo || {};
+    const rate15 = rates['1.5'] != null ? String(rates['1.5']) : (rates['2'] != null ? String(rates['2']) : '');
     setTasasPorPlazoInput({
       '1': rates['1'] != null ? String(rates['1']) : '',
+      '1.5': rate15,
       '2': rates['2'] != null ? String(rates['2']) : '',
       '3': rates['3'] != null ? String(rates['3']) : '',
       '4': rates['4'] != null ? String(rates['4']) : '',
@@ -100,6 +104,7 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
     setModalidadInput('Semestral y Anual');
     setTasasPorPlazoInput({
       '1': '',
+      '1.5': '',
       '2': '',
       '3': '',
       '4': '',
@@ -121,7 +126,7 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
     const tasasObj: Record<string, number | null> = {};
     let hasAtLeastOneRate = false;
 
-    (['1', '2', '3', '4', '5', '6'] as const).forEach((plazo) => {
+    (['1', '1.5', '2', '3', '4', '5', '6'] as const).forEach((plazo) => {
       const strVal = tasasPorPlazoInput[plazo].trim();
       if (strVal !== '') {
         const parsed = parseFloat(strVal);
@@ -136,8 +141,13 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
       }
     });
 
+    // Auto inherit 2-year rate for 1.5 if empty
+    if (tasasObj['1.5'] == null && tasasObj['2'] != null) {
+      tasasObj['1.5'] = tasasObj['2'];
+    }
+
     if (!hasAtLeastOneRate) {
-      showToast('Debe ingresar al menos una tasa para uno de los plazos (1 a 6 años).');
+      showToast('Debe ingresar al menos una tasa para uno de los plazos.');
       return;
     }
 
@@ -379,7 +389,7 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
                 </div>
               </div>
 
-              {/* Tasas por Plazo (1 a 6 Años) */}
+              {/* Tasas por Plazo (18 meses / 1 a 6 Años) */}
               <div className="space-y-2 pt-1 border-t border-slate-100">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
@@ -389,11 +399,11 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
                   <span className="text-[10px] text-slate-400">Vacío = sin tasa</span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
-                  {(['1', '2', '3', '4', '5', '6'] as const).map((plazo) => (
+                <div className="grid grid-cols-4 gap-2">
+                  {(['1', '1.5', '2', '3', '4', '5', '6'] as const).map((plazo) => (
                     <div key={plazo} className="space-y-0.5">
-                      <span className="text-[10px] font-bold text-slate-600 block">
-                        {plazo} {plazo === '1' ? 'Año' : 'Años'}
+                      <span className={`text-[10px] font-bold block ${plazo === '1.5' ? 'text-cotripar-700' : 'text-slate-600'}`}>
+                        {plazo === '1.5' ? '18 Meses' : `${plazo} ${plazo === '1' ? 'Año' : 'Años'}`}
                       </span>
                       <div className="relative">
                         <input
@@ -444,7 +454,7 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
               <p className="text-[11px] leading-tight">
-                Al seleccionar un banco en la calculadora, la tasa se ajustará automáticamente según el plazo elegido (1 a 6 años).
+                Al seleccionar un banco en la calculadora, la tasa se ajustará automáticamente según el plazo elegido (18 meses / 1 a 6 años).
               </p>
             </div>
           </div>
@@ -475,12 +485,13 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
                   <thead>
                     <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-center">
                       <th className="py-2.5 px-3 text-left">Entidad / Convenio</th>
-                      <th className="py-2.5 px-1.5 w-12">1a</th>
-                      <th className="py-2.5 px-1.5 w-12">2a</th>
-                      <th className="py-2.5 px-1.5 w-12">3a</th>
-                      <th className="py-2.5 px-1.5 w-12">4a</th>
-                      <th className="py-2.5 px-1.5 w-12">5a</th>
-                      <th className="py-2.5 px-1.5 w-12">6a</th>
+                      <th className="py-2.5 px-1 w-10">1a</th>
+                      <th className="py-2.5 px-1 w-10 text-cotripar-700">18m</th>
+                      <th className="py-2.5 px-1 w-10">2a</th>
+                      <th className="py-2.5 px-1 w-10">3a</th>
+                      <th className="py-2.5 px-1 w-10">4a</th>
+                      <th className="py-2.5 px-1 w-10">5a</th>
+                      <th className="py-2.5 px-1 w-10">6a</th>
                       <th className="py-2.5 px-2">Estado</th>
                       <th className="py-2.5 px-2">Acciones</th>
                     </tr>
@@ -506,12 +517,12 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
                             </div>
                           </td>
 
-                          {(['1', '2', '3', '4', '5', '6'] as const).map((plazo) => {
-                            const val = rates[plazo];
+                          {(['1', '1.5', '2', '3', '4', '5', '6'] as const).map((plazo) => {
+                            const val = plazo === '1.5' ? (rates['1.5'] ?? rates['2']) : rates[plazo];
                             return (
-                              <td key={plazo} className="py-2.5 px-1.5 text-center">
+                              <td key={plazo} className="py-2.5 px-1 text-center">
                                 {val != null ? (
-                                  <span className="font-bold text-slate-900">
+                                  <span className={`font-bold ${plazo === '1.5' ? 'text-cotripar-700' : 'text-slate-900'}`}>
                                     {Number(val).toFixed(2)}%
                                   </span>
                                 ) : (

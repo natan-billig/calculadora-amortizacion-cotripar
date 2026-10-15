@@ -492,7 +492,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
     : [
         `• Entidad Financiera: ${data.bancoEntidad || 'Banco Comercial'}`,
         `• Capital a Financiar: ${formatUSD(totalAFinanciar)}${anticipo > 0 ? ' (Neto de Anticipo)' : ''}`,
-        `• Plazo y Periodicidad: ${data.plazoAnios} años (${freqTexto})`,
+        `• Plazo y Periodicidad: ${Math.abs(Number(data.plazoAnios) - 1.5) < 0.05 ? '18 Meses' : `${data.plazoAnios} ${Number(data.plazoAnios) === 1 ? 'Año' : 'Años'}`} (${freqTexto})`,
         `• Cuota Referencial (Año 1): ${formatUSD(data.mayorCuotaAnio1USD)}`
       ];
   finLines.forEach((l, idx) => {

@@ -177,7 +177,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
         setBancos(data);
         if (!selectedBancoId) {
           setSelectedBancoId(data[0].id);
-          const initialRate = data[0].tasas_por_plazo?.[String(plazoAnios)] ?? Number(data[0].tasa_anual);
+          const initialRate = data[0].tasas_por_plazo?.['1.5'] ?? data[0].tasas_por_plazo?.[String(plazoAnios)] ?? Number(data[0].tasa_anual);
           setTasaAnual(Number(initialRate));
         }
       } else {
@@ -193,7 +193,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
         setBancos(defaults);
         if (!selectedBancoId) {
           setSelectedBancoId(defaults[0].id);
-          const initialRate = defaults[0].tasas_por_plazo?.[String(plazoAnios)] ?? defaults[0].tasa_anual;
+          const initialRate = defaults[0].tasas_por_plazo?.['1.5'] ?? defaults[0].tasas_por_plazo?.[String(plazoAnios)] ?? defaults[0].tasa_anual;
           setTasaAnual(Number(initialRate));
         }
       }
@@ -396,6 +396,16 @@ export const Calculator: React.FC<CalculatorProps> = ({
     }
   }, [initialSimulation]);
 
+  const getBankRateForPlazo = (banco: BancoTasa | undefined, plazo: number): number | null => {
+    if (!banco?.tasas_por_plazo) return banco?.tasa_anual != null ? Number(banco.tasa_anual) : null;
+    if (plazo === 1.5) {
+      const rate18m = banco.tasas_por_plazo['1.5'] ?? banco.tasas_por_plazo['2'];
+      return rate18m != null ? Number(rate18m) : (banco.tasa_anual != null ? Number(banco.tasa_anual) : null);
+    }
+    const rate = banco.tasas_por_plazo[String(plazo)];
+    return rate != null ? Number(rate) : null;
+  };
+
   const handleBankChange = (bancoId: string) => {
     setSelectedBancoId(bancoId);
     const banco = bancos.find(b => b.id === bancoId);
@@ -403,18 +413,25 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
     const rates = banco.tasas_por_plazo;
     if (rates && Object.keys(rates).length > 0) {
-      const currentRate = rates[String(plazoAnios)];
+      const currentRate = getBankRateForPlazo(banco, plazoAnios);
       if (currentRate != null && currentRate > 0) {
         setTasaAnual(Number(currentRate));
       } else {
         // Banco no tiene tasa para el plazo actual.
         // Cambiar automáticamente al plazo disponible recomendado (5 años, o el primer plazo disponible)
-        const availableTerms = [5, 4, 3, 2, 6, 1].filter(t => rates[String(t)] != null);
+        const availableTerms = [5, 4, 3, 2, 1.5, 6, 1].filter(t => getBankRateForPlazo(banco, t) != null);
         if (availableTerms.length > 0) {
           const newTerm = availableTerms[0];
           setPlazoAnios(newTerm);
-          setTasaAnual(Number(rates[String(newTerm)]));
-          showToast(`Plazo ajustado a ${newTerm} años con tasa de ${rates[String(newTerm)]}% en ${banco.entidad}`);
+          if (newTerm === 1.5) {
+            setFrecuencia('semestral');
+          }
+          const newRate = getBankRateForPlazo(banco, newTerm);
+          if (newRate != null) {
+            setTasaAnual(Number(newRate));
+          }
+          const termLabel = newTerm === 1.5 ? '18 meses' : `${newTerm} años`;
+          showToast(`Plazo ajustado a ${termLabel} con tasa de ${newRate}% en ${banco.entidad}`);
         } else {
           setTasaAnual(Number(banco.tasa_anual));
         }
@@ -426,9 +443,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
   const handlePlazoChange = (newPlazo: number) => {
     setPlazoAnios(newPlazo);
+    if (newPlazo === 1.5) {
+      setFrecuencia('semestral');
+    }
     const banco = bancos.find(b => b.id === selectedBancoId);
-    if (banco?.tasas_por_plazo) {
-      const rate = banco.tasas_por_plazo[String(newPlazo)];
+    if (banco) {
+      const rate = getBankRateForPlazo(banco, newPlazo);
       if (rate != null && rate > 0) {
         setTasaAnual(Number(rate));
       }
@@ -634,10 +654,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
       marca_producto: marcaProductoPrincipal,
       mes_colocacion: tipoFinanciacion === 'F_COTRIPAR' ? infoBloqueActivo.mesNombre : '',
       fecha_tope_vencimiento: tipoFinanciacion === 'F_COTRIPAR' ? infoBloqueActivo.fechaTopeVencimiento : '',
-      plazo_meses: tipoFinanciacion === 'F_COTRIPAR' ? plazoDetectadoMeses : plazoAnios * 12,
+      plazo_meses: tipoFinanciacion === 'F_COTRIPAR' ? plazoDetectadoMeses : Math.round(plazoAnios * 12),
       fechas_cuotas: tipoFinanciacion === 'F_COTRIPAR' ? fechasCuotas : undefined,
       fecha_ultima_cuota: tipoFinanciacion === 'F_COTRIPAR' ? fechaISOToDDMMYYYY(ultimaFechaCuotaISO) : undefined,
-      cantidad_cuotas: tipoFinanciacion === 'F_COTRIPAR' ? fechasCuotas.length : (resultado.frecuencia === 'semestral' ? resultado.plazoAnios * 2 : resultado.plazoAnios)
+      cantidad_cuotas: tipoFinanciacion === 'F_COTRIPAR' ? fechasCuotas.length : (resultado.frecuencia === 'semestral' ? Math.round(resultado.plazoAnios * 2) : resultado.plazoAnios)
     };
 
     try {
@@ -1340,7 +1360,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 </div>
               </div>
 
-              {/* 5. Plazo del Financiamiento (1 a 6 años) con tasas automáticas por banco */}
+              {/* 5. Plazo del Financiamiento (18 meses / 1 a 6 años) con tasas automáticas por banco */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
@@ -1348,14 +1368,14 @@ export const Calculator: React.FC<CalculatorProps> = ({
                     <span>Plazo del Financiamiento</span>
                   </label>
                   <span className="text-cotripar-700 font-black text-xs">
-                    {plazoAnios} {plazoAnios === 1 ? 'Año' : 'Años'}
+                    {plazoAnios === 1.5 ? '18 Meses' : `${plazoAnios} ${plazoAnios === 1 ? 'Año' : 'Años'}`}
                   </span>
                 </div>
-                <div className="grid grid-cols-6 gap-1.5">
-                  {[1, 2, 3, 4, 5, 6].map((p) => {
+                <div className="grid grid-cols-7 gap-1.5">
+                  {[1, 1.5, 2, 3, 4, 5, 6].map((p) => {
                     const currentBank = bancos.find((b) => b.id === selectedBancoId);
-                    const rateForP = currentBank?.tasas_por_plazo ? currentBank.tasas_por_plazo[String(p)] : null;
-                    const isConfigured = currentBank?.tasas_por_plazo ? rateForP != null : true;
+                    const rateForP = getBankRateForPlazo(currentBank, p);
+                    const isConfigured = rateForP != null;
                     const isSelected = plazoAnios === p;
 
                     return (
@@ -1372,7 +1392,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                         }`}
                         title={isConfigured ? `Tasa según tabla: ${rateForP}%` : 'Plazo sin tasa de tabla en este banco'}
                       >
-                        <span>{p}a</span>
+                        <span>{p === 1.5 ? '18m' : `${p}a`}</span>
                         {rateForP != null ? (
                           <span
                             className={`text-[9px] font-semibold mt-0.5 ${
@@ -1400,7 +1420,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 {/* Advertencia o indicador de ajuste automático según tabla del banco */}
                 {(() => {
                   const currentBank = bancos.find((b) => b.id === selectedBancoId);
-                  const rateForCurrent = currentBank?.tasas_por_plazo ? currentBank.tasas_por_plazo[String(plazoAnios)] : null;
+                  const rateForCurrent = getBankRateForPlazo(currentBank, plazoAnios);
                   if (currentBank?.tasas_por_plazo && rateForCurrent == null) {
                     return (
                       <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 font-medium">
@@ -1409,11 +1429,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
                     );
                   }
                   if (rateForCurrent != null) {
+                    const termTxt = plazoAnios === 1.5 ? '18 meses' : `${plazoAnios} ${plazoAnios === 1 ? 'año' : 'años'}`;
                     return (
                       <p className="text-[10px] text-slate-500 flex items-center gap-1 font-medium">
                         <span>
                           💡 Tasa ajustada automáticamente a <strong>{Number(rateForCurrent).toFixed(2)}%</strong> para{' '}
-                          {plazoAnios} {plazoAnios === 1 ? 'año' : 'años'} ({currentBank?.entidad}).
+                          {termTxt} ({currentBank?.entidad}).
                         </span>
                       </p>
                     );
@@ -1430,12 +1451,16 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
+                    disabled={plazoAnios === 1.5}
                     onClick={() => setFrecuencia('anual')}
                     className={`py-2.5 px-3 text-xs font-bold rounded-xl border transition-all text-center ${
-                      frecuencia === 'anual'
+                      plazoAnios === 1.5
+                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
+                        : frecuencia === 'anual'
                         ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
                         : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                     }`}
+                    title={plazoAnios === 1.5 ? 'El plazo de 18 meses opera exclusivamente en modalidad semestral (3 semestres)' : undefined}
                   >
                     Anual (1 cuota/año)
                   </button>
@@ -1448,7 +1473,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                         : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    Semestral (2 cuotas/año)
+                    Semestral {plazoAnios === 1.5 ? '(3 cuotas)' : '(2 cuotas/año)'}
                   </button>
                 </div>
 
