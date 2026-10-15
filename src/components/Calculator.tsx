@@ -123,6 +123,41 @@ export const Calculator: React.FC<CalculatorProps> = ({
     pdfBlobUrl: string;
   } | null>(null);
 
+  // Función auxiliar segura para obtener la tasa de un banco para cualquier plazo seleccionado
+  const getTasaPorPlazo = (banco: BancoTasa | undefined, plazo: number): number | null => {
+    if (!banco) return null;
+    if (!banco.tasas_por_plazo) {
+      return banco.tasa_anual != null ? Number(banco.tasa_anual) : null;
+    }
+
+    const val = banco.tasas_por_plazo[String(plazo)];
+    if (val != null && !isNaN(Number(val))) {
+      return Number(val);
+    }
+
+    // Fallback inmediato para 1 o 1.5 años (18m)
+    if (plazo === 1 || plazo === 1.5) {
+      const fallback =
+        banco.tasas_por_plazo['1.5'] ??
+        banco.tasas_por_plazo['2'] ??
+        banco.tasas_por_plazo['3'] ??
+        banco.tasa_anual;
+      return fallback != null && !isNaN(Number(fallback)) ? Number(fallback) : null;
+    }
+
+    // Fallback para 6 años (ej: Continental o Itaú) a 5 años o tasa anual
+    if (plazo === 6) {
+      const fallback6 = banco.tasas_por_plazo['5'] ?? banco.tasa_anual;
+      return fallback6 != null && !isNaN(Number(fallback6)) ? Number(fallback6) : null;
+    }
+
+    if (banco.tasa_anual != null && !isNaN(Number(banco.tasa_anual))) {
+      return Number(banco.tasa_anual);
+    }
+
+    return null;
+  };
+
   // Fetch Marcas from Supabase
   const fetchMarcas = async () => {
     setIsLoadingMarcas(true);
@@ -177,7 +212,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
         setBancos(data);
         if (!selectedBancoId) {
           setSelectedBancoId(data[0].id);
-          const initialRate = data[0].tasas_por_plazo?.['1.5'] ?? data[0].tasas_por_plazo?.[String(plazoAnios)] ?? Number(data[0].tasa_anual);
+          const initialRate = getTasaPorPlazo(data[0], plazoAnios) ?? Number(data[0].tasa_anual);
           setTasaAnual(Number(initialRate));
         }
       } else {
@@ -193,7 +228,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
         setBancos(defaults);
         if (!selectedBancoId) {
           setSelectedBancoId(defaults[0].id);
-          const initialRate = defaults[0].tasas_por_plazo?.['1.5'] ?? defaults[0].tasas_por_plazo?.[String(plazoAnios)] ?? defaults[0].tasa_anual;
+          const initialRate = getTasaPorPlazo(defaults[0], plazoAnios) ?? defaults[0].tasa_anual;
           setTasaAnual(Number(initialRate));
         }
       }
@@ -396,47 +431,15 @@ export const Calculator: React.FC<CalculatorProps> = ({
     }
   }, [initialSimulation]);
 
-  const getBankRateForPlazo = (banco: BancoTasa | undefined, plazo: number): number | null => {
-    if (!banco?.tasas_por_plazo) return banco?.tasa_anual != null ? Number(banco.tasa_anual) : null;
-    if (plazo === 1.5) {
-      const rate18m = banco.tasas_por_plazo['1.5'] ?? banco.tasas_por_plazo['2'];
-      return rate18m != null ? Number(rate18m) : (banco.tasa_anual != null ? Number(banco.tasa_anual) : null);
-    }
-    const rate = banco.tasas_por_plazo[String(plazo)];
-    return rate != null ? Number(rate) : null;
-  };
-
   const handleBankChange = (bancoId: string) => {
     setSelectedBancoId(bancoId);
     const banco = bancos.find(b => b.id === bancoId);
     if (!banco) return;
 
-    const rates = banco.tasas_por_plazo;
-    if (rates && Object.keys(rates).length > 0) {
-      const currentRate = getBankRateForPlazo(banco, plazoAnios);
-      if (currentRate != null && currentRate > 0) {
-        setTasaAnual(Number(currentRate));
-      } else {
-        // Banco no tiene tasa para el plazo actual.
-        // Cambiar automáticamente al plazo disponible recomendado (5 años, o el primer plazo disponible)
-        const availableTerms = [5, 4, 3, 2, 1.5, 6, 1].filter(t => getBankRateForPlazo(banco, t) != null);
-        if (availableTerms.length > 0) {
-          const newTerm = availableTerms[0];
-          setPlazoAnios(newTerm);
-          if (newTerm === 1.5) {
-            setFrecuencia('semestral');
-          }
-          const newRate = getBankRateForPlazo(banco, newTerm);
-          if (newRate != null) {
-            setTasaAnual(Number(newRate));
-          }
-          const termLabel = newTerm === 1.5 ? '18 meses' : `${newTerm} años`;
-          showToast(`Plazo ajustado a ${termLabel} con tasa de ${newRate}% en ${banco.entidad}`);
-        } else {
-          setTasaAnual(Number(banco.tasa_anual));
-        }
-      }
-    } else {
+    const rate = getTasaPorPlazo(banco, plazoAnios);
+    if (rate != null && rate > 0) {
+      setTasaAnual(Number(rate));
+    } else if (banco.tasa_anual != null) {
       setTasaAnual(Number(banco.tasa_anual));
     }
   };
@@ -448,12 +451,29 @@ export const Calculator: React.FC<CalculatorProps> = ({
     }
     const banco = bancos.find(b => b.id === selectedBancoId);
     if (banco) {
-      const rate = getBankRateForPlazo(banco, newPlazo);
+      const rate = getTasaPorPlazo(banco, newPlazo);
       if (rate != null && rate > 0) {
         setTasaAnual(Number(rate));
+      } else if (banco.tasa_anual != null) {
+        setTasaAnual(Number(banco.tasa_anual));
       }
     }
   };
+
+  // Sincronización automática de tasa bancaria según entidad y plazo seleccionados
+  useEffect(() => {
+    if (tipoFinanciacion === 'BANCARIA' && selectedBancoId && bancos.length > 0) {
+      const banco = bancos.find(b => b.id === selectedBancoId);
+      if (banco) {
+        const rate = getTasaPorPlazo(banco, plazoAnios);
+        if (rate != null && rate > 0) {
+          setTasaAnual(Number(rate));
+        } else if (banco.tasa_anual != null) {
+          setTasaAnual(Number(banco.tasa_anual));
+        }
+      }
+    }
+  }, [selectedBancoId, plazoAnios, bancos, tipoFinanciacion]);
 
   const selectedBancoNombre = useMemo(() => {
     const b = bancos.find(item => item.id === selectedBancoId);
@@ -574,7 +594,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
     setEsquemaSemestralCotripar('amortizacion_constante');
     if (bancos.length > 0) {
       setSelectedBancoId(bancos[0].id);
-      const defaultRate = bancos[0].tasas_por_plazo?.[5] ?? Number(bancos[0].tasa_anual);
+      const defaultRate = getTasaPorPlazo(bancos[0], 5) ?? Number(bancos[0].tasa_anual);
       setTasaAnual(Number(defaultRate));
     }
     showToast('Parámetros restablecidos.');
@@ -1374,7 +1394,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 <div className="grid grid-cols-7 gap-1.5">
                   {[1, 1.5, 2, 3, 4, 5, 6].map((p) => {
                     const currentBank = bancos.find((b) => b.id === selectedBancoId);
-                    const rateForP = getBankRateForPlazo(currentBank, p);
+                    const rateForP = getTasaPorPlazo(currentBank, p);
                     const isConfigured = rateForP != null;
                     const isSelected = plazoAnios === p;
 
@@ -1420,7 +1440,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 {/* Advertencia o indicador de ajuste automático según tabla del banco */}
                 {(() => {
                   const currentBank = bancos.find((b) => b.id === selectedBancoId);
-                  const rateForCurrent = getBankRateForPlazo(currentBank, plazoAnios);
+                  const rateForCurrent = getTasaPorPlazo(currentBank, plazoAnios);
                   if (currentBank?.tasas_por_plazo && rateForCurrent == null) {
                     return (
                       <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 font-medium">
@@ -1429,11 +1449,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
                     );
                   }
                   if (rateForCurrent != null) {
-                    const termTxt = plazoAnios === 1.5 ? '18 meses' : `${plazoAnios} ${plazoAnios === 1 ? 'año' : 'años'}`;
+                    const termTxt = plazoAnios === 1.5 ? '18 Meses' : `${plazoAnios} ${plazoAnios === 1 ? 'Año' : 'Años'}`;
                     return (
-                      <p className="text-[10px] text-slate-500 flex items-center gap-1 font-medium">
+                      <p className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2 flex items-center gap-1.5 font-semibold">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                         <span>
-                          💡 Tasa ajustada automáticamente a <strong>{Number(rateForCurrent).toFixed(2)}%</strong> para{' '}
+                          ✓ Tasa ajustada automáticamente a <strong>{Number(rateForCurrent).toFixed(2)}%</strong> para{' '}
                           {termTxt} ({currentBank?.entidad}).
                         </span>
                       </p>

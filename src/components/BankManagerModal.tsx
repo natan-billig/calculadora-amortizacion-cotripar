@@ -85,9 +85,10 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
     setModalidadInput(b.modalidad_permitida || 'Semestral y Anual');
 
     const rates = b.tasas_por_plazo || {};
+    const rate1 = rates['1'] != null ? String(rates['1']) : (rates['1.5'] != null ? String(rates['1.5']) : (rates['2'] != null ? String(rates['2']) : ''));
     const rate15 = rates['1.5'] != null ? String(rates['1.5']) : (rates['2'] != null ? String(rates['2']) : '');
     setTasasPorPlazoInput({
-      '1': rates['1'] != null ? String(rates['1']) : '',
+      '1': rate1,
       '1.5': rate15,
       '2': rates['2'] != null ? String(rates['2']) : '',
       '3': rates['3'] != null ? String(rates['3']) : '',
@@ -140,6 +141,11 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
         tasasObj[plazo] = null;
       }
     });
+
+    // Auto inherit 1.5-year / 2-year rate for 1 if empty
+    if (tasasObj['1'] == null) {
+      tasasObj['1'] = tasasObj['1.5'] ?? tasasObj['2'] ?? tasasObj['3'] ?? null;
+    }
 
     // Auto inherit 2-year rate for 1.5 if empty
     if (tasasObj['1.5'] == null && tasasObj['2'] != null) {
@@ -518,7 +524,12 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
                           </td>
 
                           {(['1', '1.5', '2', '3', '4', '5', '6'] as const).map((plazo) => {
-                            const val = plazo === '1.5' ? (rates['1.5'] ?? rates['2']) : rates[plazo];
+                            const val =
+                              plazo === '1'
+                                ? (rates['1'] ?? rates['1.5'] ?? rates['2'] ?? rates['3'] ?? b.tasa_anual)
+                                : plazo === '1.5'
+                                ? (rates['1.5'] ?? rates['2'])
+                                : rates[plazo];
                             return (
                               <td key={plazo} className="py-2.5 px-1 text-center">
                                 {val != null ? (
