@@ -19,7 +19,12 @@ import {
   getTasaMensualCotripar,
   MESES_MATRIZ_COTRIPAR,
   formatUSD,
-  formatPercent
+  formatPercent,
+  generarFechasAtajo,
+  fechaISOToDDMMYYYY,
+  fechaDDMMYYYYToISO,
+  parseMesColocacion,
+  calcularMesesDesdeColocacion
 } from '../utils/calculatorEngine';
 import { generarPDFSimulacion } from '../utils/pdfGenerator';
 import { supabase } from '../lib/supabase';
@@ -42,7 +47,9 @@ import {
   Tractor,
   Plus,
   Trash2,
-  Tag
+  Tag,
+  CalendarClock,
+  AlertCircle
 } from 'lucide-react';
 
 interface CalculatorProps {
@@ -89,10 +96,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const [frecuencia, setFrecuencia] = useState<FrecuenciaPago>('anual');
   const [modalidadSemestral, setModalidadSemestral] = useState<ModalidadSemestral>('zafra_interes_primero');
 
-  // Financiación Cotripar Mode Inputs (Matriz 2026-2028)
+  // Financiación Cotripar Mode Inputs (Matriz 2026-2028 & V.2.2 Fechas Cuotas)
   const [mesColocacion, setMesColocacion] = useState<string>('Octubre 2026');
-  const [plazoMeses, setPlazoMeses] = useState<number>(17);
-  const [periodicidadCotripar, setPeriodicidadCotripar] = useState<PeriodicidadCotripar>('mensual');
+  const [fechasCuotas, setFechasCuotas] = useState<string[]>(() => {
+    return generarFechasAtajo('semestral', 'Octubre 2026');
+  });
+  const [periodicidadCotripar, setPeriodicidadCotripar] = useState<PeriodicidadCotripar>('semestral_zafra');
   const [esquemaSemestralCotripar, setEsquemaSemestralCotripar] = useState<EsquemaSemestralCotripar>('amortizacion_constante');
 
 
@@ -199,21 +208,117 @@ export const Calculator: React.FC<CalculatorProps> = ({
     fetchBancos();
   }, []);
 
-  // Financiación Cotripar Block info and dynamic rate
+  // Financiación Cotripar Block info, date limits and dynamic rate
   const infoBloqueActivo = useMemo(() => {
     return getMatrizBloqueInfo(mesColocacion);
   }, [mesColocacion]);
 
+  const fechaTopeISO = useMemo(() => {
+    return fechaDDMMYYYYToISO(infoBloqueActivo.fechaTopeVencimiento);
+  }, [infoBloqueActivo.fechaTopeVencimiento]);
+
+  const { anio: anioColocacion, mesNum: mesColocacionNum } = useMemo(() => {
+    return parseMesColocacion(mesColocacion);
+  }, [mesColocacion]);
+
+  const ultimaFechaCuotaISO = useMemo(() => {
+    return fechasCuotas.length > 0 ? fechasCuotas[fechasCuotas.length - 1] : '';
+  }, [fechasCuotas]);
+
+  // Plazo detectado 100% automático basado en la última cuota
+  const plazoDetectadoMeses = useMemo(() => {
+    if (!ultimaFechaCuotaISO) return 1;
+    return calcularMesesDesdeColocacion(ultimaFechaCuotaISO, anioColocacion, mesColocacionNum);
+  }, [ultimaFechaCuotaISO, anioColocacion, mesColocacionNum]);
+
+  // Ajuste automático de la tasa (0.60% vs 0.80%)
   const tasaMensualCalculada = useMemo(() => {
-    return getTasaMensualCotripar(plazoMeses);
-  }, [plazoMeses]);
+    return getTasaMensualCotripar(plazoDetectadoMeses);
+  }, [plazoDetectadoMeses]);
 
   const handleMesColocacionChange = (newMes: string) => {
     setMesColocacion(newMes);
-    const info = getMatrizBloqueInfo(newMes);
-    // Por padrão, ao selecionar o Mês de Colocação, preenche com o Plazo Real Otorgado daquele mês na matriz
-    setPlazoMeses(info.plazoMaximo);
+    // Regenerar atajo inteligente de fechas para el nuevo mes seleccionado
+    const nuevasFechas = generarFechasAtajo('semestral', newMes);
+    setFechasCuotas(nuevasFechas);
   };
+
+  const handleUpdateFechaCuota = (index: number, newDate: string) => {
+    setFechasCuotas((prev) => {
+      const next = [...prev];
+      next[index] = newDate;
+      return next;
+    });
+  };
+
+  const handleAddCuota = () => {
+    setFechasCuotas((prev) => {
+      if (prev.length === 0) {
+        return [fechaTopeISO];
+      }
+      const last = prev[prev.length - 1];
+      if (last >= fechaTopeISO) {
+        showToast(`La última cuota ya está fijada en la Fecha Tope (${infoBloqueActivo.fechaTopeVencimiento}).`);
+        return prev;
+      }
+      const parts = last.split('-').map(Number);
+      let y = parts[0];
+      let m = parts[1] + 1;
+      if (m > 12) {
+        y += Math.floor((m - 1) / 12);
+        m = ((m - 1) % 12) + 1;
+      }
+      let nextDate = `${y}-${String(m).padStart(2, '0')}-20`;
+      if (nextDate > fechaTopeISO) {
+        nextDate = fechaTopeISO;
+      }
+      return [...prev, nextDate];
+    });
+  };
+
+  const handleRemoveCuota = (index: number) => {
+    if (fechasCuotas.length <= 1) {
+      showToast('Debe haber al menos 1 cuota en el cronograma.');
+      return;
+    }
+    setFechasCuotas((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleApplyAtajo = (tipo: 'tope' | 'semestral' | 'zafra' | 'mensual') => {
+    const atajoFechas = generarFechasAtajo(tipo, mesColocacion);
+    setFechasCuotas(atajoFechas);
+    if (tipo === 'tope') {
+      setPeriodicidadCotripar('pago_unico');
+    } else if (tipo === 'mensual') {
+      setPeriodicidadCotripar('mensual');
+    } else {
+      setPeriodicidadCotripar('semestral_zafra');
+    }
+  };
+
+  // Validación de cronograma y límites
+  const errorFechasCuotas = useMemo((): string | null => {
+    if (tipoFinanciacion !== 'F_COTRIPAR') return null;
+    if (!fechasCuotas || fechasCuotas.length === 0) {
+      return 'Debe ingresar al menos una cuota de pago.';
+    }
+    for (let i = 0; i < fechasCuotas.length; i++) {
+      if (!fechasCuotas[i]) {
+        return `La Cuota #${i + 1} no tiene una fecha seleccionada.`;
+      }
+      if (i > 0 && fechasCuotas[i] <= fechasCuotas[i - 1]) {
+        return `Error en cronograma: La Cuota #${i + 1} (${fechaISOToDDMMYYYY(fechasCuotas[i])}) debe ser posterior a la Cuota #${i} (${fechaISOToDDMMYYYY(fechasCuotas[i - 1])}). Las fechas deben estar en orden cronológico creciente.`;
+      }
+    }
+    const last = fechasCuotas[fechasCuotas.length - 1];
+    if (last > fechaTopeISO) {
+      return `La última cuota (${fechaISOToDDMMYYYY(last)}) supera la Fecha Tope de Vencimiento permitida (${infoBloqueActivo.fechaTopeVencimiento}) del ${infoBloqueActivo.bloque}.`;
+    }
+    if (plazoDetectadoMeses > infoBloqueActivo.plazoMaximo) {
+      return `El plazo detectado (${plazoDetectadoMeses} meses) supera el plazo máximo permitido (${infoBloqueActivo.plazoMaximo} meses) para colocaciones en ${mesColocacion}.`;
+    }
+    return null;
+  }, [tipoFinanciacion, fechasCuotas, fechaTopeISO, infoBloqueActivo, plazoDetectadoMeses, mesColocacion]);
 
   // Handle re-loading simulation from history
   useEffect(() => {
@@ -223,8 +328,23 @@ export const Calculator: React.FC<CalculatorProps> = ({
         if (initialSimulation.mes_colocacion) {
           setMesColocacion(initialSimulation.mes_colocacion);
         }
-        if (initialSimulation.plazo_meses) {
-          setPlazoMeses(initialSimulation.plazo_meses);
+        if (initialSimulation.fechas_cuotas && Array.isArray(initialSimulation.fechas_cuotas) && initialSimulation.fechas_cuotas.length > 0) {
+          setFechasCuotas(initialSimulation.fechas_cuotas);
+        } else if (initialSimulation.cronograma_json && Array.isArray(initialSimulation.cronograma_json)) {
+          const extracted: string[] = [];
+          initialSimulation.cronograma_json.forEach((c) => {
+            const m = c.label.match(/\((\d{2}\/\d{2}\/\d{4})\)/);
+            if (m && m[1]) {
+              extracted.push(fechaDDMMYYYYToISO(m[1]));
+            }
+          });
+          if (extracted.length > 0) {
+            setFechasCuotas(extracted);
+          } else {
+            setFechasCuotas(generarFechasAtajo('semestral', initialSimulation.mes_colocacion || 'Octubre 2026'));
+          }
+        } else {
+          setFechasCuotas(generarFechasAtajo('semestral', initialSimulation.mes_colocacion || 'Octubre 2026'));
         }
         if (initialSimulation.periodicidad) {
           setPeriodicidadCotripar(initialSimulation.periodicidad as PeriodicidadCotripar);
@@ -362,12 +482,13 @@ export const Calculator: React.FC<CalculatorProps> = ({
       return calcularFCotripar(
         capital,
         mesColocacion,
-        plazoMeses,
+        plazoDetectadoMeses,
         periodicidadCotripar,
         esquemaSemestralCotripar,
         undefined,
         items,
-        anticipoUSD
+        anticipoUSD,
+        fechasCuotas
       );
     }
     return calcularSistemaAleman(
@@ -387,11 +508,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
     modalidadSemestral,
     selectedBancoNombre,
     mesColocacion,
-    plazoMeses,
+    plazoDetectadoMeses,
     periodicidadCotripar,
     esquemaSemestralCotripar,
     items,
-    anticipoUSD
+    anticipoUSD,
+    fechasCuotas
   ]);
 
   const capitalPresets = [25000, 50000, 75000, 110000, 150000, 200000];
@@ -416,8 +538,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
     setModalidadSemestral('zafra_interes_primero');
     setTipoFinanciacion('BANCARIA');
     setMesColocacion('Octubre 2026');
-    setPlazoMeses(17);
-    setPeriodicidadCotripar('mensual');
+    setFechasCuotas(generarFechasAtajo('semestral', 'Octubre 2026'));
+    setPeriodicidadCotripar('semestral_zafra');
     setEsquemaSemestralCotripar('amortizacion_constante');
     if (bancos.length > 0) {
       setSelectedBancoId(bancos[0].id);
@@ -451,6 +573,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
     if (capital < 1000) {
       showToast('El Capital Solicitado a financiar debe ser de al menos 1.000 USD (verifique precios y entrega inicial).');
+      return;
+    }
+
+    if (tipoFinanciacion === 'F_COTRIPAR' && errorFechasCuotas) {
+      setValidationTriggered(true);
+      showToast(errorFechasCuotas);
       return;
     }
 
@@ -495,7 +623,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
       marca_producto: marcaProductoPrincipal,
       mes_colocacion: tipoFinanciacion === 'F_COTRIPAR' ? infoBloqueActivo.mesNombre : '',
       fecha_tope_vencimiento: tipoFinanciacion === 'F_COTRIPAR' ? infoBloqueActivo.fechaTopeVencimiento : '',
-      plazo_meses: tipoFinanciacion === 'F_COTRIPAR' ? plazoMeses : plazoAnios * 12
+      plazo_meses: tipoFinanciacion === 'F_COTRIPAR' ? plazoDetectadoMeses : plazoAnios * 12,
+      fechas_cuotas: tipoFinanciacion === 'F_COTRIPAR' ? fechasCuotas : undefined,
+      fecha_ultima_cuota: tipoFinanciacion === 'F_COTRIPAR' ? fechaISOToDDMMYYYY(ultimaFechaCuotaISO) : undefined,
+      cantidad_cuotas: tipoFinanciacion === 'F_COTRIPAR' ? fechasCuotas.length : (resultado.frecuencia === 'semestral' ? resultado.plazoAnios * 2 : resultado.plazoAnios)
     };
 
     try {
@@ -947,62 +1078,131 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 </div>
               </div>
 
-              {/* B. Plazo en Meses (1 hasta el Plazo Máximo del Mes) */}
-              <div className="space-y-1.5">
+              {/* B. Fechas de Pago de las Cuotas y Plazo Automático (Sustituye slider manual) */}
+              <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Plazo Otorgado en Meses (1 a {infoBloqueActivo.plazoMaximo}m)</span>
+                    <CalendarClock className="w-3.5 h-3.5 text-cotripar-700" />
+                    <span>Fechas de Pago de las Cuotas y Plazo Automático *</span>
                   </label>
-                  <span className="text-cotripar-700 font-black text-xs bg-cotripar-50 px-2 py-0.5 rounded-lg border border-cotripar-200">
-                    {plazoMeses} {plazoMeses === 1 ? 'Mes' : 'Meses'}
+                  <span className="text-[11px] font-black text-cotripar-700 bg-cotripar-50 px-2.5 py-0.5 rounded-full border border-cotripar-200">
+                    {fechasCuotas.length} {fechasCuotas.length === 1 ? 'Cuota' : 'Cuotas'}
                   </span>
                 </div>
 
-                {/* Quick Buttons */}
-                <div className="grid grid-cols-4 gap-1.5">
-                  {Array.from(new Set([6, 9, 12, infoBloqueActivo.plazoMaximo]))
-                    .filter((m) => m <= infoBloqueActivo.plazoMaximo)
-                    .map((m) => {
-                      const isSelected = plazoMeses === m;
-                      const isTope = m === infoBloqueActivo.plazoMaximo;
-                      return (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => setPlazoMeses(m)}
-                          className={`py-2 px-1 text-xs font-extrabold rounded-xl border transition-all text-center flex flex-col items-center justify-center ${
-                            isSelected
-                              ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
-                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span>{m}m</span>
-                          <span className={`text-[9px] font-semibold ${isSelected ? 'text-cotripar-100' : 'text-slate-400'}`}>
-                            {isTope ? 'Plazo Tope' : `${m <= 12 ? '0.60%' : '0.80%'}`}
-                          </span>
-                        </button>
-                      );
-                    })}
-                </div>
-
-                <div className="pt-1">
-                  <input
-                    type="range"
-                    min="1"
-                    max={infoBloqueActivo.plazoMaximo}
-                    step="1"
-                    value={plazoMeses}
-                    onChange={(e) => setPlazoMeses(parseInt(e.target.value, 10))}
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cotripar-700"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-400 font-bold px-0.5">
-                    <span>1m</span>
-                    <span>6m</span>
-                    <span>12m (0.60%)</span>
-                    <span>Tope: {infoBloqueActivo.plazoMaximo}m ({infoBloqueActivo.plazoMaximo <= 12 ? '0.60%' : '0.80%'})</span>
+                {/* Banner de Destaque do Plazo Detectado Automaticamente */}
+                <div className="p-3 bg-red-50/80 border border-red-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-cotripar-700 shrink-0" />
+                    <div>
+                      <span className="text-xs font-black text-cotripar-900 block">
+                        Plazo Detectado Automáticamente: {plazoDetectadoMeses} {plazoDetectadoMeses === 1 ? 'Mes' : 'Meses'}
+                      </span>
+                      <span className="text-[10px] text-slate-600 font-medium">
+                        Según última cuota: <strong>{fechaISOToDDMMYYYY(ultimaFechaCuotaISO) || 'N/A'}</strong> (Tope Máx: {infoBloqueActivo.fechaTopeVencimiento})
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-cotripar-700 text-white shadow-xs">
+                      {plazoDetectadoMeses <= 12 ? 'Tasa: 0.60% mes' : 'Tasa: 0.80% mes'}
+                    </span>
                   </div>
                 </div>
+
+                {/* Atajos Rápidos de Preenchimento Inteligente e Botão Agregar Cuota */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  <span className="text-[10px] font-bold text-slate-400 mr-0.5">Atajos:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyAtajo('tope')}
+                    className="px-2 py-1 text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg shadow-xs transition-all"
+                  >
+                    1 Cuota (Fecha Tope)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyAtajo('semestral')}
+                    className="px-2 py-1 text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg shadow-xs transition-all"
+                  >
+                    2 Cuotas (Semestral)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyAtajo('zafra')}
+                    className="px-2 py-1 text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg shadow-xs transition-all"
+                  >
+                    3 Cuotas (Zafra)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyAtajo('mensual')}
+                    className="px-2 py-1 text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg shadow-xs transition-all"
+                  >
+                    Cuotas Mensuales
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddCuota}
+                    className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-extrabold bg-cotripar-50 hover:bg-cotripar-100 text-cotripar-800 border border-cotripar-200 rounded-lg transition-all shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Agregar Cuota</span>
+                  </button>
+                </div>
+
+                {/* Lista Dinâmica de Datas de Quotas */}
+                <div className="space-y-1.5 max-h-72 overflow-y-auto pr-0.5">
+                  {fechasCuotas.map((fecha, idx) => {
+                    const mesAcum = calcularMesesDesdeColocacion(fecha, anioColocacion, mesColocacionNum);
+                    const prevMesAcum = idx > 0
+                      ? calcularMesesDesdeColocacion(fechasCuotas[idx - 1], anioColocacion, mesColocacionNum)
+                      : 0;
+                    const mesesPeriodo = idx === 0 ? Math.max(1, mesAcum) : Math.max(1, mesAcum - prevMesAcum);
+
+                    return (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between gap-2 p-2 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl transition-all"
+                      >
+                        <span className="text-[11px] font-black text-cotripar-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-xs shrink-0">
+                          Cuota #{idx + 1}
+                        </span>
+
+                        <input
+                          type="date"
+                          max={fechaTopeISO}
+                          value={fecha}
+                          onChange={(e) => handleUpdateFechaCuota(idx, e.target.value)}
+                          className="flex-1 min-w-[125px] px-2.5 py-1 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+                        />
+
+                        <span className="text-[10px] font-extrabold text-cotripar-700 bg-cotripar-50 px-2 py-0.5 rounded-md border border-cotripar-200 shrink-0">
+                          Mes {mesAcum} (+{mesesPeriodo}m)
+                        </span>
+
+                        {fechasCuotas.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCuota(idx)}
+                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all shrink-0"
+                            title="Eliminar cuota"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Banner de Aviso de Error / Bloqueo en Cronograma */}
+                {errorFechasCuotas && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs font-bold text-red-700 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <span className="leading-tight">{errorFechasCuotas}</span>
+                  </div>
+                )}
               </div>
 
               {/* C. Tasa de Interés Mensual Automática (0.60% vs 0.80%) */}
@@ -1010,7 +1210,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <Percent className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Tasa de Interés Mensual (%)</span>
+                    <span>Tasa de Interés Mensual Automática</span>
                   </label>
                   <span className="text-xs font-black text-cotripar-700 bg-cotripar-50 px-2.5 py-1 rounded-lg border border-cotripar-200">
                     {tasaMensualCalculada.toFixed(2)}% mensual
@@ -1018,83 +1218,39 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 </div>
                 <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs font-medium">
                   <span className="text-slate-700 font-semibold">
-                    {plazoMeses <= 12
-                      ? '⚡ 0.60% mensual (Plazo hasta 12 meses)'
-                      : '⚡ 0.80% mensual (Plazo de 13 a 18 meses)'}
+                    {plazoDetectadoMeses <= 12
+                      ? '⚡ 0.60% mensual (Plazo detectado ≤ 12 meses)'
+                      : '⚡ 0.80% mensual (Plazo detectado de 13 a 18 meses)'}
                   </span>
                   <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">
-                    Eq. {plazoMeses <= 12 ? '7.20%' : '9.60%'} nom. anual
+                    Eq. {plazoDetectadoMeses <= 12 ? '7.20%' : '9.60%'} nom. anual
                   </span>
                 </div>
               </div>
 
-              {/* D. Periodicidad / Modalidad de Pago en Financiación Cotripar */}
+              {/* D. Esquema de Amortización */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 block">
-                  Periodicidad / Modalidad de Pago
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-cotripar-700" />
+                  <span>Esquema de Amortización por Cuota</span>
                 </label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setPeriodicidadCotripar('mensual')}
-                    className={`py-2 px-1 text-xs font-bold rounded-xl border text-center transition-all ${
-                      periodicidadCotripar === 'mensual'
-                        ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    Mensual ({plazoMeses}c)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPeriodicidadCotripar('semestral_zafra')}
-                    className={`py-2 px-1 text-xs font-bold rounded-xl border text-center transition-all ${
-                      periodicidadCotripar === 'semestral_zafra'
-                        ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    Semestral / Zafra
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPeriodicidadCotripar('pago_unico')}
-                    className={`py-2 px-1 text-xs font-bold rounded-xl border text-center transition-all ${
-                      periodicidadCotripar === 'pago_unico'
-                        ? 'bg-cotripar-700 text-white border-cotripar-700 shadow-sm'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    Pago Único
-                  </button>
-                </div>
-
-                {/* Sub-opciones para Semestral / Zafra */}
-                {periodicidadCotripar === 'semestral_zafra' && (
-                  <div className="mt-2 p-3 bg-cotripar-50/70 border border-cotripar-200 rounded-xl animate-in fade-in space-y-1.5">
-                    <label className="text-xs font-bold text-cotripar-900 flex items-center gap-1">
-                      <Sparkles className="w-3.5 h-3.5 text-cotripar-700" />
-                      <span>Esquema de Cuotas Semestrales</span>
-                    </label>
-                    <select
-                      value={esquemaSemestralCotripar}
-                      onChange={(e) => setEsquemaSemestralCotripar(e.target.value as EsquemaSemestralCotripar)}
-                      className="w-full px-3 py-2 text-xs font-bold text-slate-900 bg-white border border-cotripar-300 rounded-lg focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
-                    >
-                      <option value="amortizacion_constante">
-                        Cuotas Semestrales Iguales de Capital (Uniforme)
-                      </option>
-                      <option value="interes_primero">
-                        Zafra: Interés Primero + Capital al Vencimiento Final
-                      </option>
-                    </select>
-                    <p className="text-[10px] text-cotripar-800">
-                      {esquemaSemestralCotripar === 'interes_primero'
-                        ? '🌾 Cuotas semestrales intermedias de solo interés; 100% de capital al vencimiento final en la Fecha Tope.'
-                        : '⚖️ Amortización de capital distribuida uniformemente en cada período semestral hasta la Fecha Tope.'}
-                    </p>
-                  </div>
-                )}
+                <select
+                  value={esquemaSemestralCotripar}
+                  onChange={(e) => setEsquemaSemestralCotripar(e.target.value as EsquemaSemestralCotripar)}
+                  className="w-full px-3 py-2 text-xs font-bold text-slate-900 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+                >
+                  <option value="amortizacion_constante">
+                    Amortización Constante por Cuota (Capital dividido uniformemente)
+                  </option>
+                  <option value="interes_primero">
+                    Zafra: Interés Primero en intermedias + 100% Capital al Vencimiento Final
+                  </option>
+                </select>
+                <p className="text-[10px] text-slate-500 px-0.5">
+                  {esquemaSemestralCotripar === 'interes_primero'
+                    ? '🌾 Cuotas intermedias cubren únicamente intereses del período; amortización completa de capital en la última cuota.'
+                    : '⚖️ Amortización uniforme de capital (Capital / N) en cada una de las fechas programadas.'}
+                </p>
               </div>
 
               {/* E. Gasto Administrativo: 0% Exento */}
@@ -1332,9 +1488,9 @@ export const Calculator: React.FC<CalculatorProps> = ({
         <div className="pt-2 space-y-2">
           <button
             type="button"
-            disabled={isProcessing}
+            disabled={isProcessing || (tipoFinanciacion === 'F_COTRIPAR' && Boolean(errorFechasCuotas))}
             onClick={handleCalcularYGenerarPDF}
-            className="w-full py-3.5 bg-cotripar-700 hover:bg-cotripar-800 active:bg-cotripar-900 text-white font-extrabold rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-2 text-base transition-all disabled:opacity-60"
+            className="w-full py-3.5 bg-cotripar-700 hover:bg-cotripar-800 active:bg-cotripar-900 text-white font-extrabold rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-2 text-base transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isProcessing ? (
               <>

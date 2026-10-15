@@ -1,4 +1,4 @@
-export const APP_VERSION = 'V.2.1';
+export const APP_VERSION = 'V.2.2';
 
 export interface ItemMaquinaria {
   id: string;
@@ -130,7 +130,7 @@ export type FrecuenciaPago = 'anual' | 'semestral';
 export type ModalidadSemestral = 'zafra_interes_primero' | 'constante';
 
 export interface CronogramaPeriodo {
-  periodo: number;
+  periodo: number | string;
   label: string;
   anio: number;
   saldoInicial: number;
@@ -169,6 +169,9 @@ export interface ResultadoAleman {
   bloqueActivo?: string;
   periodicidadCotripar?: PeriodicidadCotripar;
   marcaProducto?: string;
+  fechasCuotas?: string[];
+  fechaUltimaCuota?: string;
+  cantidadCuotas?: number;
 }
 
 export interface SimulacionPDF {
@@ -200,5 +203,8 @@ export interface SimulacionPDF {
   mes_colocacion?: string;
   fecha_tope_vencimiento?: string;
   plazo_meses?: number;
+  fechas_cuotas?: string[];
+  fecha_ultima_cuota?: string;
+  cantidad_cuotas?: number;
 }
 

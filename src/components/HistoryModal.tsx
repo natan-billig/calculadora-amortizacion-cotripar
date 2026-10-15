@@ -463,7 +463,10 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       cuotaAnio1: sim.mayor_cuota_anio1_usd,
       cuotaMayorAnio1: sim.mayor_cuota_anio1_usd,
       totalCuotasAnio1: sim.mayor_cuota_anio1_usd,
-      bancoEntidad: isCotripar ? 'Financiación Cotripar' : sim.banco_entidad
+      bancoEntidad: isCotripar ? 'Financiación Cotripar' : sim.banco_entidad,
+      fechasCuotas: sim.fechas_cuotas,
+      fechaUltimaCuota: sim.fecha_ultima_cuota,
+      cantidadCuotas: sim.cantidad_cuotas || (sim.cronograma_json ? sim.cronograma_json.length : undefined)
     };
 
     const doc = await generarPDFSimulacion(sim, resultadoMock);
@@ -622,7 +625,10 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         plazoMeses: offerModalSim.plazo_meses,
         tasaMensual: isCotripar
           ? (offerModalSim.tasa_anual > 2 ? offerModalSim.tasa_anual / 12 : offerModalSim.tasa_anual)
-          : undefined
+          : undefined,
+        fechasCuotas: offerModalSim.fechas_cuotas,
+        fechaUltimaCuota: offerModalSim.fecha_ultima_cuota,
+        cantidadCuotas: offerModalSim.cantidad_cuotas || (offerModalSim.cronograma_json ? offerModalSim.cronograma_json.length : undefined)
       };
 
       const doc = await generarPDFCartaOferta(payload);

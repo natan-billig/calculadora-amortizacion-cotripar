@@ -30,12 +30,15 @@ export interface CartaOfertaPayload {
   gastoAdminUSD: number;
   mayorCuotaAnio1USD: number;
   totalPagadoUSD: number;
-  // Financiación Cotripar & Marcas (V.1.9)
+  // Financiación Cotripar & Marcas (V.1.9 & V.2.2)
   tipoFinanciacion?: string;
   mesColocacion?: string;
   fechaTopeVencimiento?: string;
   plazoMeses?: number;
   tasaMensual?: number;
+  fechasCuotas?: string[];
+  fechaUltimaCuota?: string;
+  cantidadCuotas?: number;
 }
 
 interface LogoData {
@@ -445,7 +448,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   const boxW = (contentWidth - gridGap) / 2; // ~89mm
 
   // Box A (Financiación) & Box B (Entrega)
-  const boxAHeight = 32;
+  const boxAHeight = 35;
   const boxAX = marginX;
   const boxBX = marginX + boxW + gridGap;
 
@@ -465,7 +468,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
     currentY + 4.5
   );
 
-  doc.setFontSize(6.3);
+  doc.setFontSize(6.2);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
   const freqTexto = isCotripar
@@ -476,11 +479,13 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
         ? (data.modalidadSemestral === 'zafra_interes_primero' ? 'Semestral (Zafra)' : 'Semestral (Constante)')
         : 'Anual Estándar');
 
+  const cantCuotas = data.cantidadCuotas || (data.fechasCuotas ? data.fechasCuotas.length : 1);
   const finLines = isCotripar
     ? [
         `• Modalidad: Financiación Cotripar`,
         `• Capital a Financiar: ${formatUSD(totalAFinanciar)} (Neto de Anticipo)`,
-        `• Plazo: ${data.plazoMeses || Math.round(data.plazoAnios * 12)} meses (${freqTexto}) • Tope: ${data.fechaTopeVencimiento || '20/03/2028'}`,
+        `• Plazo Financiado: ${data.plazoMeses || Math.round(data.plazoAnios * 12)} Meses (${cantCuotas} ${cantCuotas === 1 ? 'cuota' : 'cuotas'} programadas)`,
+        `• Fecha de Última Cuota: ${data.fechaUltimaCuota || data.fechaTopeVencimiento || '20/03/2028'} (Tope: ${data.fechaTopeVencimiento || '20/03/2028'})`,
         `• Tasa Mensual Ref.: ${data.tasaMensual ? data.tasaMensual.toFixed(2) : (data.tasaAnual > 2 ? (data.tasaAnual / 12).toFixed(2) : data.tasaAnual.toFixed(2))}% mensual (+ IVA 10% s/ int.)`,
         `• Gasto Admin.: Exento ($ 0) | Mayor Cuota: ${formatUSD(data.mayorCuotaAnio1USD)}`,
         `• Total Proyectado c/ Financiación: ${formatUSD(data.totalPagadoUSD)}`
@@ -494,7 +499,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
         `• Total Proyectado c/ Financiación: ${formatUSD(data.totalPagadoUSD)}`
       ];
   finLines.forEach((l, idx) => {
-    doc.text(l, boxAX + 3.5, currentY + 8.5 + idx * 3.8);
+    doc.text(l, boxAX + 3.5, currentY + 8.2 + idx * 3.6);
   });
 
   // Desenhar Box B

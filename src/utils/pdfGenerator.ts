@@ -156,8 +156,20 @@ export async function generarPDFSimulacion(
 
   const colLeftLabelX = 18;
   const colLeftValX = 50;
-  const colRightLabelX = 108;
-  const colRightValX = 144;
+  const colRightLabelX = 104;
+  const colRightValX = 138;
+
+  let fechaUltimaCuota = resultado.fechaUltimaCuota || simulacion.fecha_ultima_cuota;
+  if (!fechaUltimaCuota && resultado.cronograma && resultado.cronograma.length > 0) {
+    const lastLabel = resultado.cronograma[resultado.cronograma.length - 1].label;
+    const match = lastLabel.match(/\(([^)]+)\)/);
+    if (match) fechaUltimaCuota = match[1];
+  }
+  if (!fechaUltimaCuota) {
+    fechaUltimaCuota = simulacion.fecha_tope_vencimiento || '20/03/2028';
+  }
+
+  const cantidadCuotas = resultado.cantidadCuotas || simulacion.cantidad_cuotas || resultado.cronograma.length;
 
   const freqDesc = isCotripar
     ? (simulacion.periodicidad === 'semestral_zafra' || simulacion.periodicidad === 'semestral'
@@ -221,11 +233,11 @@ export async function generarPDFSimulacion(
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text(isCotripar ? 'Plazo Otorgado / Tope:' : 'Plazo / Periodicidad:', colRightLabelX, currentY + 22.5);
+  doc.text(isCotripar ? 'Plazo Total Detectado:' : 'Plazo / Periodicidad:', colRightLabelX, currentY + 22.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
   const plazoDesc = isCotripar
-    ? `${simulacion.plazo_meses || 17} meses • Vence: ${simulacion.fecha_tope_vencimiento || '20/03/2028'}`
+    ? `${simulacion.plazo_meses || resultado.plazoMeses || 17} Meses (Según última cuota: ${fechaUltimaCuota})`
     : `${simulacion.plazo_anios} años • ${freqDesc}`;
   doc.text(plazoDesc, colRightValX, currentY + 22.5);
 
@@ -239,10 +251,13 @@ export async function generarPDFSimulacion(
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text(isCotripar ? 'Mayor Cuota del Plan:' : 'Mayor Cuota Año 1:', colRightLabelX, currentY + 28);
+  doc.text(isCotripar ? 'Cantidad de Cuotas:' : 'Mayor Cuota Año 1:', colRightLabelX, currentY + 28);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(200, 16, 46);
-  doc.text(formatUSD(simulacion.mayor_cuota_anio1_usd), colRightValX, currentY + 28);
+  doc.setTextColor(isCotripar ? 15 : 200, isCotripar ? 23 : 16, isCotripar ? 42 : 46);
+  const cuotasDesc = isCotripar
+    ? `${cantidadCuotas} Cuotas con fechas programadas`
+    : formatUSD(simulacion.mayor_cuota_anio1_usd);
+  doc.text(cuotasDesc, colRightValX, currentY + 28);
 
   // Row 5: Y = currentY + 33.5
   doc.setFont('helvetica', 'normal');
@@ -254,6 +269,15 @@ export async function generarPDFSimulacion(
     ? '$ 0 (Exento — Financiación Cotripar)'
     : `${formatUSD(simulacion.gasto_admin_usd)} (1% sobre capital)`;
   doc.text(gastoTxt, colLeftValX, currentY + 33.5);
+
+  if (isCotripar) {
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Mayor Cuota del Plan:', colRightLabelX, currentY + 33.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(200, 16, 46);
+    doc.text(formatUSD(simulacion.mayor_cuota_anio1_usd), colRightValX, currentY + 33.5);
+  }
 
   currentY += 42;
 
