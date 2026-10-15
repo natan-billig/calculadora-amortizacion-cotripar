@@ -30,7 +30,7 @@ export interface CartaOfertaPayload {
   gastoAdminUSD: number;
   mayorCuotaAnio1USD: number;
   totalPagadoUSD: number;
-  // Financiación Cotripar & Marcas (V.1.9 & V.2.2)
+  // Financiación Cotripar & Marcas (V.1.9 & V.2.3)
   tipoFinanciacion?: string;
   mesColocacion?: string;
   fechaTopeVencimiento?: string;
@@ -168,10 +168,10 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   }
 
   // Subtítulo Institucional limpo abaixo da logo
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.0);
-  doc.setTextColor(254, 226, 226); // Rosado claro / branco suave
-  doc.text('División de Maquinarias e Implementos Agrícolas • RUC: 80019076-9 • Paraguay', leftX, 22.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.2);
+  doc.setTextColor(255, 255, 255); // Branco suave / destacado
+  doc.text('COMERCIO DE TRACTORES E IMPLEMENTOS DEL PARAGUAY (COTRIPAR) S.A. • RUC: 80019076-9', leftX, 22.5);
 
   // Cálculo de Fecha de Vencimiento (+20 días)
   const fechaVencimiento = calculateExpirationDate(data.fechaEmision, 20);
@@ -215,7 +215,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   let currentY = 40;
 
   // 2. QUADRO DE DADOS DO CLIENTE E BANCO DESTINATÁRIO
-  const clientBoxHeight = 24;
+  const clientBoxHeight = 25;
   doc.setFillColor(248, 250, 252); // Slate-50
   doc.setDrawColor(226, 232, 240); // Slate-200
   doc.roundedRect(marginX, currentY, contentWidth, clientBoxHeight, 1.5, 1.5, 'FD');
@@ -227,6 +227,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   // Coluna Esquerda: Dados do Cliente
   const cLeftX = marginX + 6;
   const cLeftValX = cLeftX + 32;
+  const maxLeftValW = 54; // Largura máxima segura para que o texto da esquerda NUNCA encoste na coluna direita (cRightX = marginX + 96 = 110)
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
@@ -234,8 +235,8 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.text('CLIENTE / SOLICITANTE:', cLeftX, currentY + 6);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  const clienteTxt = data.clienteNombre.length > 45 ? data.clienteNombre.substring(0, 42) + '...' : data.clienteNombre;
-  doc.text(clienteTxt, cLeftValX, currentY + 6);
+  const clienteLines = doc.splitTextToSize(data.clienteNombre || 'Cliente General', maxLeftValW);
+  doc.text(clienteLines[0], cLeftValX, currentY + 6);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
@@ -244,7 +245,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setTextColor(15, 23, 42);
   doc.text(data.clienteRuc || 'N/A', cLeftValX, currentY + 11.5);
 
-  // Linha opcional de Contato ou Localização
+  // Linha opcional de Contato ou Localização com quebra automática segura
   if (data.atencionContacto?.trim() || data.ubicacion?.trim()) {
     const extraLabel = data.atencionContacto?.trim() ? 'ATENCIÓN / CONTACTO:' : 'UBICACIÓN / CIUDAD:';
     const extraVal = data.atencionContacto?.trim() || data.ubicacion?.trim() || '';
@@ -253,8 +254,9 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
     doc.text(extraLabel, cLeftX, currentY + 17);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(15, 23, 42);
-    // Exibir texto completo sem truncar com reticências
-    doc.text(extraVal, cLeftValX, currentY + 17);
+    // Limite de largura máxima segura com splitTextToSize para NUNCA encostar na coluna da direita
+    const extraLines = doc.splitTextToSize(extraVal, maxLeftValW);
+    doc.text(extraLines, cLeftValX, currentY + 17);
   }
 
   // Coluna Direita: Dados da Entidade Financeira
@@ -448,7 +450,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   const boxW = (contentWidth - gridGap) / 2; // ~89mm
 
   // Box A (Financiación) & Box B (Entrega)
-  const boxAHeight = 35;
+  const boxAHeight = 28;
   const boxAX = marginX;
   const boxBX = marginX + boxW + gridGap;
 
@@ -482,24 +484,19 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   const cantCuotas = data.cantidadCuotas || (data.fechasCuotas ? data.fechasCuotas.length : 1);
   const finLines = isCotripar
     ? [
-        `• Modalidad: Financiación Cotripar`,
-        `• Capital a Financiar: ${formatUSD(totalAFinanciar)} (Neto de Anticipo)`,
-        `• Plazo Financiado: ${data.plazoMeses || Math.round(data.plazoAnios * 12)} Meses (${cantCuotas} ${cantCuotas === 1 ? 'cuota' : 'cuotas'} programadas)`,
-        `• Fecha de Última Cuota: ${data.fechaUltimaCuota || data.fechaTopeVencimiento || '20/03/2028'} (Tope: ${data.fechaTopeVencimiento || '20/03/2028'})`,
-        `• Tasa Mensual Ref.: ${data.tasaMensual ? data.tasaMensual.toFixed(2) : (data.tasaAnual > 2 ? (data.tasaAnual / 12).toFixed(2) : data.tasaAnual.toFixed(2))}% mensual (+ IVA 10% s/ int.)`,
-        `• Gasto Admin.: Exento ($ 0) | Mayor Cuota: ${formatUSD(data.mayorCuotaAnio1USD)}`,
-        `• Total Proyectado c/ Financiación: ${formatUSD(data.totalPagadoUSD)}`
+        `• Entidad Financiera: Financiación Cotripar`,
+        `• Capital a Financiar: ${formatUSD(totalAFinanciar)}${anticipo > 0 ? ' (Neto de Anticipo)' : ''}`,
+        `• Plazo y Periodicidad: ${data.plazoMeses || Math.round(data.plazoAnios * 12)} Meses (${cantCuotas} ${cantCuotas === 1 ? 'cuota programada' : 'cuotas programadas'} - ${freqTexto})`,
+        `• Cuota Referencial: ${formatUSD(data.mayorCuotaAnio1USD)} (Última cuota: ${data.fechaUltimaCuota || data.fechaTopeVencimiento || '20/03/2028'})`
       ]
     : [
-        `• Entidad: ${data.bancoEntidad || 'Banco Comercial'}`,
-        `• Capital a Financiar: ${formatUSD(totalAFinanciar)} (Neto de Anticipo)`,
-        `• Plazo: ${data.plazoAnios} años (${freqTexto})`,
-        `• Tasa Nominal Ref.: ${Number(data.tasaAnual).toFixed(2)}% anual (+ IVA 10% s/ int.)`,
-        `• Gasto Admin. (1%): ${formatUSD(data.gastoAdminUSD)} | Mayor Cuota Año 1: ${formatUSD(data.mayorCuotaAnio1USD)}`,
-        `• Total Proyectado c/ Financiación: ${formatUSD(data.totalPagadoUSD)}`
+        `• Entidad Financiera: ${data.bancoEntidad || 'Banco Comercial'}`,
+        `• Capital a Financiar: ${formatUSD(totalAFinanciar)}${anticipo > 0 ? ' (Neto de Anticipo)' : ''}`,
+        `• Plazo y Periodicidad: ${data.plazoAnios} años (${freqTexto})`,
+        `• Cuota Referencial (Año 1): ${formatUSD(data.mayorCuotaAnio1USD)}`
       ];
   finLines.forEach((l, idx) => {
-    doc.text(l, boxAX + 3.5, currentY + 8.2 + idx * 3.6);
+    doc.text(l, boxAX + 3.5, currentY + 8.8 + idx * 4.2);
   });
 
   // Desenhar Box B
@@ -519,15 +516,14 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setTextColor(71, 85, 105);
   const entLines = [
     `• Validez: 20 días calendario (Vence: ${fechaVencimiento}).`,
-    `• Entrega sujeta a aprobación crediticia y desembolso por parte de la entidad bancaria (${data.bancoEntidad || 'el Banco'}).`,
-    '• Lugar de entrega: Puesto en estancia / establecimiento del cliente según acuerdo comercial.',
-    '• Disponibilidad: Inmediata según inventario en casa central o sucursales de Cotripar S.A.'
+    `• Entrega sujeta a aprobación crediticia y desembolso por parte de la entidad financiera (${isCotripar ? 'Cotripar S.A.' : (data.bancoEntidad || 'el Banco')}).`,
+    '• Lugar de entrega: Puesto en estancia / establecimiento del cliente según acuerdo comercial.'
   ];
-  let entY = currentY + 8.5;
+  let entY = currentY + 8.8;
   entLines.forEach((l) => {
     const split = doc.splitTextToSize(l, boxW - 6);
     doc.text(split, boxBX + 3.5, entY);
-    entY += split.length * 3.2 + 1;
+    entY += split.length * 3.2 + 1.2;
   });
 
   currentY += boxAHeight + 3.5;
@@ -621,7 +617,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.8);
   doc.setTextColor(100, 116, 139);
-  doc.text('División Comercial • Cotripar S.A.', pageWidth / 2, currentY, { align: 'center' });
+  doc.text('COMERCIO DE TRACTORES E IMPLEMENTOS DEL PARAGUAY (COTRIPAR) S.A.', pageWidth / 2, currentY, { align: 'center' });
   doc.text('RUC: 80019076-9 • Paraguay', pageWidth / 2, currentY + 3.2, { align: 'center' });
 
   // 7. AVISO LEGAL DE RODAPÉ (UMA ÚNICA PÁGINA PERFEITA)
@@ -630,7 +626,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setFontSize(6);
   doc.setTextColor(148, 163, 184);
   doc.text(
-    `Nota: Los valores de financiación bancaria son referenciales y sujetos a la liquidación definitiva de la entidad bancaria. • Sistema Cotripar SAC ${APP_VERSION}`,
+    `COMERCIO DE TRACTORES E IMPLEMENTOS DEL PARAGUAY (COTRIPAR) S.A. • RUC: 80019076-9 • Sistema Cotripar SAC ${APP_VERSION}`,
     pageWidth / 2,
     footerY,
     { align: 'center' }

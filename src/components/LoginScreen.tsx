@@ -131,7 +131,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ showToast, onLoginSucc
       {/* Footer Branding with APP_VERSION & Developer Credit */}
       <div className="text-center mt-6 text-xs text-slate-400 space-y-2">
         <div className="flex items-center justify-center gap-2">
-          <p>Cotripar S.A. • RUC: 80019076-9 • Paraguay</p>
+          <p>COMERCIO DE TRACTORES E IMPLEMENTOS DEL PARAGUAY (COTRIPAR) S.A. • RUC: 80019076-9 • Paraguay</p>
           <span className="px-2 py-0.5 text-[10px] font-bold bg-white text-slate-500 rounded-full border border-slate-200">
             {APP_VERSION}
           </span>

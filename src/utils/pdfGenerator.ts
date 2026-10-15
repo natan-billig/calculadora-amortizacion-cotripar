@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import type { ResultadoAleman, SimulacionPDF } from '../types';
+import type { ResultadoAleman, SimulacionPDF, ItemMaquinaria } from '../types';
 import { APP_VERSION } from '../types';
 import { formatUSD, formatPercent } from './calculatorEngine';
 
@@ -97,10 +97,10 @@ export async function generarPDFSimulacion(
   }
 
   // Subtítulo Institucional limpo abaixo da logo
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.0);
-  doc.setTextColor(254, 226, 226); // Rosado claro / branco suave
-  doc.text('División de Maquinarias e Implementos Agrícolas • RUC: 80019076-9 • Paraguay', leftX, 22.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.2);
+  doc.setTextColor(255, 255, 255); // Branco suave / destacado
+  doc.text('COMERCIO DE TRACTORES E IMPLEMENTOS DEL PARAGUAY (COTRIPAR) S.A. • RUC: 80019076-9', leftX, 22.5);
 
   // Top Right Protocol & Metadata
   const isCotripar = simulacion.tipo_financiacion === 'F_COTRIPAR' || resultado.tipoFinanciacion === 'F_COTRIPAR' || (simulacion.banco_entidad || '').toUpperCase().includes('COTRIPAR');
@@ -141,10 +141,11 @@ export async function generarPDFSimulacion(
 
   let currentY = 40;
 
-  // Box 1: Client and Parameters Grid
+  // Box 1: Client and Parameters Grid (4 rows cleanly aligned in 2 columns)
+  const box1Height = 28;
   doc.setFillColor(254, 252, 252);
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, currentY, pageWidth - 28, 38, 2, 2, 'FD');
+  doc.roundedRect(14, currentY, pageWidth - 28, box1Height, 2, 2, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
@@ -179,110 +180,189 @@ export async function generarPDFSimulacion(
         ? (simulacion.modalidad_semestral === 'zafra_interes_primero' ? 'Semestral (Zafra)' : 'Semestral (Constante)')
         : 'Anual Estándar');
 
-  // Row 1: Y = currentY + 11.5
+  // Row 1: Y = currentY + 11
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
+  doc.setFontSize(7.2);
   doc.setTextColor(71, 85, 105);
-  doc.text('Cliente / Solicitante:', colLeftLabelX, currentY + 11.5);
+  doc.text('Cliente / Solicitante:', colLeftLabelX, currentY + 11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
   const clienteTxt = (simulacion.cliente_nombre || 'Cliente General').length > 32
     ? (simulacion.cliente_nombre || '').substring(0, 30) + '...'
     : simulacion.cliente_nombre || 'Cliente General';
-  doc.text(clienteTxt, colLeftValX, currentY + 11.5);
+  doc.text(clienteTxt, colLeftValX, currentY + 11);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text(isCotripar ? 'Modalidad / Entidad:' : 'Entidad Bancaria:', colRightLabelX, currentY + 11.5);
+  doc.text(isCotripar ? 'Modalidad / Entidad:' : 'Entidad Bancaria:', colRightLabelX, currentY + 11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(isCotripar ? 'Financiación Cotripar' : (simulacion.banco_entidad || 'Banco Comercial'), colRightValX, currentY + 11.5);
+  doc.text(isCotripar ? 'Financiación Cotripar' : (simulacion.banco_entidad || 'Banco Comercial'), colRightValX, currentY + 11);
 
-  // Row 2: Y = currentY + 17
+  // Row 2: Y = currentY + 16
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('RUC / C.I.:', colLeftLabelX, currentY + 17);
+  doc.text('RUC / C.I.:', colLeftLabelX, currentY + 16);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(simulacion.cliente_ruc || 'N/A', colLeftValX, currentY + 17);
+  doc.text(simulacion.cliente_ruc || 'N/A', colLeftValX, currentY + 16);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text(isCotripar ? 'Tasa de Interés:' : 'Tasa Nominal Anual:', colRightLabelX, currentY + 17);
+  doc.text(isCotripar ? 'Tasa de Interés:' : 'Tasa Nominal Anual:', colRightLabelX, currentY + 16);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
   const tasaDisplay = isCotripar
     ? `${resultado.tasaMensual ? resultado.tasaMensual.toFixed(2) : (simulacion.tasa_anual > 2 ? (simulacion.tasa_anual / 12).toFixed(2) : simulacion.tasa_anual.toFixed(2))}% mensual (+ IVA 10%)`
     : formatPercent(simulacion.tasa_anual);
-  doc.text(tasaDisplay, colRightValX, currentY + 17);
+  doc.text(tasaDisplay, colRightValX, currentY + 16);
 
-  // Row 3: Y = currentY + 22.5
+  // Row 3: Y = currentY + 21
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Máquina / Implemento:', colLeftLabelX, currentY + 22.5);
+  doc.text('Capital Solicitado:', colLeftLabelX, currentY + 21);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(200, 16, 46); // Cotripar Red for highlight
-  let rawMaquina = simulacion.maquina_implemento || 'Equipo Cotizado';
-  if (simulacion.marca_producto && !rawMaquina.includes(simulacion.marca_producto)) {
-    rawMaquina = `[${simulacion.marca_producto}] ${rawMaquina}`;
-  }
-  const maquinaTxt = rawMaquina.length > 32
-    ? rawMaquina.substring(0, 30) + '...'
-    : rawMaquina;
-  doc.text(maquinaTxt, colLeftValX, currentY + 22.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(formatUSD(simulacion.capital_usd), colLeftValX, currentY + 21);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text(isCotripar ? 'Plazo Total Detectado:' : 'Plazo / Periodicidad:', colRightLabelX, currentY + 22.5);
+  doc.text(isCotripar ? 'Plazo Total Detectado:' : 'Plazo / Periodicidad:', colRightLabelX, currentY + 21);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
   const plazoDesc = isCotripar
     ? `${simulacion.plazo_meses || resultado.plazoMeses || 17} Meses (Según última cuota: ${fechaUltimaCuota})`
     : `${simulacion.plazo_anios} años • ${freqDesc}`;
-  doc.text(plazoDesc, colRightValX, currentY + 22.5);
+  doc.text(plazoDesc, colRightValX, currentY + 21);
 
-  // Row 4: Y = currentY + 28
+  // Row 4: Y = currentY + 26
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Capital Solicitado:', colLeftLabelX, currentY + 28);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text(formatUSD(simulacion.capital_usd), colLeftValX, currentY + 28);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
-  doc.text(isCotripar ? 'Cantidad de Cuotas:' : 'Mayor Cuota Año 1:', colRightLabelX, currentY + 28);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(isCotripar ? 15 : 200, isCotripar ? 23 : 16, isCotripar ? 42 : 46);
-  const cuotasDesc = isCotripar
-    ? `${cantidadCuotas} Cuotas con fechas programadas`
-    : formatUSD(simulacion.mayor_cuota_anio1_usd);
-  doc.text(cuotasDesc, colRightValX, currentY + 28);
-
-  // Row 5: Y = currentY + 33.5
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Gasto Administrativo:', colLeftLabelX, currentY + 33.5);
+  doc.text('Gasto Administrativo:', colLeftLabelX, currentY + 26);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
   const gastoTxt = isCotripar
     ? '$ 0 (Exento — Financiación Cotripar)'
     : `${formatUSD(simulacion.gasto_admin_usd)} (1% sobre capital)`;
-  doc.text(gastoTxt, colLeftValX, currentY + 33.5);
+  doc.text(gastoTxt, colLeftValX, currentY + 26);
 
-  if (isCotripar) {
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(71, 85, 105);
-    doc.text('Mayor Cuota del Plan:', colRightLabelX, currentY + 33.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text(isCotripar ? 'Mayor Cuota del Plan:' : 'Mayor Cuota Año 1:', colRightLabelX, currentY + 26);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(200, 16, 46);
+  const cuotasDesc = isCotripar
+    ? `${formatUSD(simulacion.mayor_cuota_anio1_usd)} (${cantidadCuotas} ${cantidadCuotas === 1 ? 'cuota' : 'cuotas'})`
+    : formatUSD(simulacion.mayor_cuota_anio1_usd);
+  doc.text(cuotasDesc, colRightValX, currentY + 26);
+
+  currentY += box1Height + 3.5;
+
+  // Box 1.1: EQUIPAMIENTO / MAQUINARIAS COTIZADAS (Sub-tabela completa sem cortes)
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.0);
+  doc.setTextColor(200, 16, 46);
+  doc.text('EQUIPAMIENTO / MAQUINARIAS COTIZADAS', 14, currentY);
+
+  const itemsList: ItemMaquinaria[] =
+    simulacion.items_json && simulacion.items_json.length > 0
+      ? simulacion.items_json
+      : (resultado.items && resultado.items.length > 0
+          ? resultado.items
+          : [
+              {
+                id: '1',
+                marca: simulacion.marca_producto || '',
+                descripcion: simulacion.maquina_implemento || 'Equipamiento Agrícola Cotripar',
+                cantidad: 1,
+                precioUnitarioUSD: simulacion.capital_usd + (simulacion.anticipo_usd || resultado.anticipoUSD || 0)
+              }
+            ]);
+
+  const anticipo = (simulacion.anticipo_usd && simulacion.anticipo_usd > 0)
+    ? simulacion.anticipo_usd
+    : ((resultado.anticipoUSD && resultado.anticipoUSD > 0) ? resultado.anticipoUSD : 0);
+
+  const subtotalEquipos = itemsList.reduce(
+    (sum, it) => sum + (Number(it.cantidad) || 1) * (Number(it.precioUnitarioUSD) || 0),
+    0
+  );
+  const capitalNeto = Math.max(0, subtotalEquipos - anticipo);
+
+  const equipTableBody = itemsList.map((it, idx) => {
+    const itemNum = String(idx + 1).padStart(2, '0');
+    const marca = it.marca?.trim() || simulacion.marca_producto?.trim() || '-';
+    const desc = it.descripcion?.trim() || 'Equipamiento Agrícola Cotripar';
+    const cant = Number(it.cantidad) > 0 ? Number(it.cantidad) : 1;
+    const precioUnit = Number(it.precioUnitarioUSD) || 0;
+    const itemSubtotal = cant * precioUnit;
+    return [
+      itemNum,
+      marca,
+      desc,
+      cant.toString(),
+      formatUSD(precioUnit),
+      formatUSD(itemSubtotal)
+    ];
+  });
+
+  autoTable(doc, {
+    startY: currentY + 1.8,
+    margin: { left: 14, right: 14 },
+    head: [['Ítem', 'Marca', 'Descripción del Equipo / Implemento', 'Cant.', 'Precio Unit. (USD)', 'Subtotal (USD)']],
+    body: equipTableBody,
+    theme: 'grid',
+    styles: {
+      fontSize: 6.8,
+      cellPadding: 1.2,
+      textColor: [30, 41, 59],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.15,
+      halign: 'right'
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 10, fontStyle: 'bold' },
+      1: { halign: 'left', cellWidth: 26, fontStyle: 'bold' },
+      2: { halign: 'left' },
+      3: { halign: 'center', cellWidth: 12 },
+      4: { halign: 'right', cellWidth: 26 },
+      5: { halign: 'right', cellWidth: 28, fontStyle: 'bold' }
+    },
+    headStyles: {
+      fillColor: [200, 16, 46],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      halign: 'center',
+      fontSize: 7.0,
+      cellPadding: 1.4
+    },
+    alternateRowStyles: {
+      fillColor: [252, 252, 252]
+    }
+  });
+
+  currentY = (doc as any).lastAutoTable.finalY + 1.5;
+
+  if (anticipo > 0) {
+    doc.setFillColor(254, 242, 242);
+    doc.setDrawColor(254, 202, 202);
+    doc.roundedRect(14, currentY, pageWidth - 28, 5.2, 1, 1, 'FD');
     doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
     doc.setTextColor(200, 16, 46);
-    doc.text(formatUSD(simulacion.mayor_cuota_anio1_usd), colRightValX, currentY + 33.5);
+    doc.text(
+      `Subtotal Equipos: ${formatUSD(subtotalEquipos)}   |   Entrega Inicial: -${formatUSD(anticipo)}   |   Capital Neto a Financiar: ${formatUSD(capitalNeto)}`,
+      pageWidth / 2,
+      currentY + 3.6,
+      { align: 'center' }
+    );
+    currentY += 7.2;
+  } else {
+    currentY += 2;
   }
 
-  currentY += 42;
-
   // Box 2: Financial Summary KPI Cards (4 columns)
-  const kpiBoxHeight = 16;
+  const kpiBoxHeight = 14;
   const kpiBoxWidth = (pageWidth - 28 - 9) / 4;
 
   const kpis = [
@@ -299,16 +379,16 @@ export async function generarPDFSimulacion(
     doc.roundedRect(boxX, currentY, kpiBoxWidth, kpiBoxHeight, 1.5, 1.5, 'FD');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6);
+    doc.setFontSize(5.8);
     doc.setTextColor(100, 116, 139);
-    doc.text(kpi.label, boxX + kpiBoxWidth / 2, currentY + 5.5, { align: 'center' });
+    doc.text(kpi.label, boxX + kpiBoxWidth / 2, currentY + 4.5, { align: 'center' });
 
-    doc.setFontSize(8.5);
+    doc.setFontSize(8.0);
     doc.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
-    doc.text(kpi.val, boxX + kpiBoxWidth / 2, currentY + 12, { align: 'center' });
+    doc.text(kpi.val, boxX + kpiBoxWidth / 2, currentY + 10.5, { align: 'center' });
   });
 
-  currentY += kpiBoxHeight + 5;
+  currentY += kpiBoxHeight + 4;
 
   // Section 3: Detailed Schedule Table
   doc.setFont('helvetica', 'bold');
@@ -418,10 +498,10 @@ export async function generarPDFSimulacion(
   doc.text(splitTexto, 17, postTableY + 9.5);
 
   // Footer of A4 page with APP_VERSION
-  doc.setFontSize(6.5);
+  doc.setFontSize(6.2);
   doc.setTextColor(148, 163, 184);
   doc.text(
-    `Cotripar S.A. • RUC: 80019076-9 • Valores expresados en Dólares Americanos (USD) • Sistema SAC ${APP_VERSION}`,
+    `COMERCIO DE TRACTORES E IMPLEMENTOS DEL PARAGUAY (COTRIPAR) S.A. • RUC: 80019076-9 • Valores expresados en Dólares Americanos (USD) • Sistema SAC ${APP_VERSION}`,
     pageWidth / 2,
     pageHeight - 7,
     { align: 'center' }

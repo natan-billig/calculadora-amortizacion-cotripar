@@ -49,7 +49,8 @@ import {
   Trash2,
   Tag,
   CalendarClock,
-  AlertCircle
+  AlertCircle,
+  Lock
 } from 'lucide-react';
 
 interface CalculatorProps {
@@ -96,7 +97,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const [frecuencia, setFrecuencia] = useState<FrecuenciaPago>('anual');
   const [modalidadSemestral, setModalidadSemestral] = useState<ModalidadSemestral>('zafra_interes_primero');
 
-  // Financiación Cotripar Mode Inputs (Matriz 2026-2028 & V.2.2 Fechas Cuotas)
+  // Financiación Cotripar Mode Inputs (Matriz 2026-2028 & V.2.3 Fechas Cuotas)
   const [mesColocacion, setMesColocacion] = useState<string>('Octubre 2026');
   const [fechasCuotas, setFechasCuotas] = useState<string[]>(() => {
     return generarFechasAtajo('semestral', 'Octubre 2026');
@@ -221,6 +222,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
     return parseMesColocacion(mesColocacion);
   }, [mesColocacion]);
 
+  const fechaMinColocacionISO = useMemo(() => {
+    return `${anioColocacion}-${String(mesColocacionNum).padStart(2, '0')}-01`;
+  }, [anioColocacion, mesColocacionNum]);
+
   const ultimaFechaCuotaISO = useMemo(() => {
     return fechasCuotas.length > 0 ? fechasCuotas[fechasCuotas.length - 1] : '';
   }, [fechasCuotas]);
@@ -306,6 +311,9 @@ export const Calculator: React.FC<CalculatorProps> = ({
       if (!fechasCuotas[i]) {
         return `La Cuota #${i + 1} no tiene una fecha seleccionada.`;
       }
+      if (fechasCuotas[i] < fechaMinColocacionISO) {
+        return `La Cuota #${i + 1} (${fechaISOToDDMMYYYY(fechasCuotas[i])}) no puede ser anterior al mes de colocación (${mesColocacion}).`;
+      }
       if (i > 0 && fechasCuotas[i] <= fechasCuotas[i - 1]) {
         return `Error en cronograma: La Cuota #${i + 1} (${fechaISOToDDMMYYYY(fechasCuotas[i])}) debe ser posterior a la Cuota #${i} (${fechaISOToDDMMYYYY(fechasCuotas[i - 1])}). Las fechas deben estar en orden cronológico creciente.`;
       }
@@ -314,11 +322,14 @@ export const Calculator: React.FC<CalculatorProps> = ({
     if (last > fechaTopeISO) {
       return `La última cuota (${fechaISOToDDMMYYYY(last)}) supera la Fecha Tope de Vencimiento permitida (${infoBloqueActivo.fechaTopeVencimiento}) del ${infoBloqueActivo.bloque}.`;
     }
+    if (plazoDetectadoMeses > 18) {
+      return `El plazo detectado (${plazoDetectadoMeses} meses) supera el límite máximo de 18 meses.`;
+    }
     if (plazoDetectadoMeses > infoBloqueActivo.plazoMaximo) {
       return `El plazo detectado (${plazoDetectadoMeses} meses) supera el plazo máximo permitido (${infoBloqueActivo.plazoMaximo} meses) para colocaciones en ${mesColocacion}.`;
     }
     return null;
-  }, [tipoFinanciacion, fechasCuotas, fechaTopeISO, infoBloqueActivo, plazoDetectadoMeses, mesColocacion]);
+  }, [tipoFinanciacion, fechasCuotas, fechaTopeISO, fechaMinColocacionISO, infoBloqueActivo, plazoDetectadoMeses, mesColocacion]);
 
   // Handle re-loading simulation from history
   useEffect(() => {
@@ -1078,12 +1089,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 </div>
               </div>
 
-              {/* B. Fechas de Pago de las Cuotas y Plazo Automático (Sustituye slider manual) */}
+              {/* B. Plazo Otorgado y Fechas de Pago de las Cuotas */}
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <CalendarClock className="w-3.5 h-3.5 text-cotripar-700" />
-                    <span>Fechas de Pago de las Cuotas y Plazo Automático *</span>
+                    <span>Plazo Otorgado y Fechas de Pago de las Cuotas *</span>
                   </label>
                   <span className="text-[11px] font-black text-cotripar-700 bg-cotripar-50 px-2.5 py-0.5 rounded-full border border-cotripar-200">
                     {fechasCuotas.length} {fechasCuotas.length === 1 ? 'Cuota' : 'Cuotas'}
@@ -1096,10 +1107,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
                     <Calendar className="w-4 h-4 text-cotripar-700 shrink-0" />
                     <div>
                       <span className="text-xs font-black text-cotripar-900 block">
-                        Plazo Detectado Automáticamente: {plazoDetectadoMeses} {plazoDetectadoMeses === 1 ? 'Mes' : 'Meses'}
+                        Plazo Detectado Automáticamente: {plazoDetectadoMeses} {plazoDetectadoMeses === 1 ? 'Mes' : 'Meses'} (según última cuota: {fechaISOToDDMMYYYY(ultimaFechaCuotaISO) || 'N/A'})
                       </span>
                       <span className="text-[10px] text-slate-600 font-medium">
-                        Según última cuota: <strong>{fechaISOToDDMMYYYY(ultimaFechaCuotaISO) || 'N/A'}</strong> (Tope Máx: {infoBloqueActivo.fechaTopeVencimiento})
+                        Fecha Tope de Vencimiento: <strong>{infoBloqueActivo.fechaTopeVencimiento}</strong> (Tope Máx: {infoBloqueActivo.plazoMaximo} meses)
                       </span>
                     </div>
                   </div>
@@ -1118,28 +1129,28 @@ export const Calculator: React.FC<CalculatorProps> = ({
                     onClick={() => handleApplyAtajo('tope')}
                     className="px-2 py-1 text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg shadow-xs transition-all"
                   >
-                    1 Cuota (Fecha Tope)
+                    1 Cuota
                   </button>
                   <button
                     type="button"
                     onClick={() => handleApplyAtajo('semestral')}
                     className="px-2 py-1 text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg shadow-xs transition-all"
                   >
-                    2 Cuotas (Semestral)
+                    2 Cuotas
                   </button>
                   <button
                     type="button"
                     onClick={() => handleApplyAtajo('zafra')}
                     className="px-2 py-1 text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg shadow-xs transition-all"
                   >
-                    3 Cuotas (Zafra)
+                    3 Cuotas
                   </button>
                   <button
                     type="button"
                     onClick={() => handleApplyAtajo('mensual')}
                     className="px-2 py-1 text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg shadow-xs transition-all"
                   >
-                    Cuotas Mensuales
+                    Mensual
                   </button>
                   <button
                     type="button"
@@ -1147,7 +1158,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                     className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-extrabold bg-cotripar-50 hover:bg-cotripar-100 text-cotripar-800 border border-cotripar-200 rounded-lg transition-all shadow-xs"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Agregar Cuota</span>
+                    <span>+ Agregar Cuota</span>
                   </button>
                 </div>
 
@@ -1166,11 +1177,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
                         className="flex items-center justify-between gap-2 p-2 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl transition-all"
                       >
                         <span className="text-[11px] font-black text-cotripar-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-xs shrink-0">
-                          Cuota #{idx + 1}
+                          Cuota {idx + 1}
                         </span>
 
                         <input
                           type="date"
+                          min={fechaMinColocacionISO}
                           max={fechaTopeISO}
                           value={fecha}
                           onChange={(e) => handleUpdateFechaCuota(idx, e.target.value)}
@@ -1205,26 +1217,30 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 )}
               </div>
 
-              {/* C. Tasa de Interés Mensual Automática (0.60% vs 0.80%) */}
+              {/* C. Tasa de Interés Mensual 100% Bloqueada / Readonly */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <Percent className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Tasa de Interés Mensual Automática</span>
+                    <Lock className="w-3.5 h-3.5 text-cotripar-700" />
+                    <span>Tasa de Interés Mensual (100% Bloqueada / Readonly)</span>
                   </label>
                   <span className="text-xs font-black text-cotripar-700 bg-cotripar-50 px-2.5 py-1 rounded-lg border border-cotripar-200">
                     {tasaMensualCalculada.toFixed(2)}% mensual
                   </span>
                 </div>
-                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs font-medium">
-                  <span className="text-slate-700 font-semibold">
-                    {plazoDetectadoMeses <= 12
-                      ? '⚡ 0.60% mensual (Plazo detectado ≤ 12 meses)'
-                      : '⚡ 0.80% mensual (Plazo detectado de 13 a 18 meses)'}
-                  </span>
-                  <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">
-                    Eq. {plazoDetectadoMeses <= 12 ? '7.20%' : '9.60%'} nom. anual
-                  </span>
+                <div className="relative">
+                  <input
+                    type="text"
+                    readOnly
+                    disabled
+                    value={`${tasaMensualCalculada.toFixed(2)}% mensual (${plazoDetectadoMeses <= 12 ? '0.60% mensual — Plazo ≤ 12 meses' : '0.80% mensual — Plazo 13 a 18 meses'})`}
+                    className="w-full pl-3.5 pr-10 py-2.5 text-xs font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded-xl cursor-not-allowed select-none"
+                  />
+                  <Lock className="w-4 h-4 text-slate-400 absolute right-3.5 top-3 pointer-events-none" />
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium px-1">
+                  <span>🔒 Determinada automáticamente por el plazo de la última cuota (Inalterable)</span>
+                  <span>Eq. {plazoDetectadoMeses <= 12 ? '7.20%' : '9.60%'} nom. anual</span>
                 </div>
               </div>
 

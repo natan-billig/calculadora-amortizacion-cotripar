@@ -122,10 +122,10 @@ const MainApp: React.FC = () => {
       <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 no-print mt-auto">
         <div className="max-w-7xl mx-auto px-4 space-y-2">
           <p className="font-extrabold text-slate-800 text-sm">
-            Cotripar S.A. — División de Finanzas & Maquinarias Agrícolas
+            COMERCIO DE TRACTORES E IMPLEMENTOS DEL PARAGUAY (COTRIPAR) S.A.
           </p>
           <div className="flex items-center justify-center gap-2 flex-wrap text-xs text-slate-500 font-medium">
-            <span>Cotripar S.A. • RUC: 80019076-9 • Paraguay</span>
+            <span>RUC: 80019076-9 • Paraguay</span>
             <span className="px-2 py-0.5 text-[10px] font-extrabold bg-cotripar-50 text-cotripar-700 rounded-full border border-cotripar-200">
               {APP_VERSION}
             </span>

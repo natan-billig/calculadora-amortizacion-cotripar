@@ -413,7 +413,7 @@ export function generarFechasAtajo(
 }
 
 /**
- * Calculadora Oficial Financiación Cotripar V.2.2:
+ * Calculadora Oficial Financiación Cotripar V.2.3:
  * - Fechas de pago exactas por cuota ingresadas por el asesor (`fechasCuotas`).
  * - Detección 100% automática del plazo financiado según la fecha de la ÚLTIMA cuota.
  * - Tasa mensual automática: 0.60% mensual si plazo <= 12 meses; 0.80% mensual si 13 a 18 meses.
