@@ -1,4 +1,12 @@
-export const APP_VERSION = 'V.2.5';
+export const APP_VERSION = 'V.2.6';
+
+export interface ConfigFinanciacionCotripar {
+  id: number;
+  tasa_hasta_12m: number;
+  tasa_mas_12m: number;
+  plazo_max_meses: number;
+  updated_at?: string;
+}
 
 export interface ItemMaquinaria {
   id: string;

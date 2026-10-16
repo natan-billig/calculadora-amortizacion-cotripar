@@ -513,3 +513,366 @@ export async function generarPDFSimulacion(
 
   return doc;
 }
+
+export interface DatosReporteComparativo {
+  vendedorNombre: string;
+  clienteNombre: string;
+  clienteRuc: string;
+  maquinaDescripcion: string;
+  items: ItemMaquinaria[];
+  anticipoUSD: number;
+  capitalUSD: number;
+  bancoNombre: string;
+  resultadoBanco: ResultadoAleman;
+  resultadoCotripar: ResultadoAleman;
+  conclusionTexto: string;
+}
+
+export async function generarPDFComparativo(datos: DatosReporteComparativo): Promise<jsPDF> {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const now = new Date();
+  const fechaStr =
+    now.toLocaleDateString('es-ES', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    }) +
+    ' ' +
+    now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+
+  const codProtocolo = `COT-CMP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(
+    now.getDate()
+  ).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  // Header Background Bar (Cotripar Red: #C8102E -> RGB: 200, 16, 46)
+  doc.setFillColor(200, 16, 46);
+  doc.rect(0, 0, pageWidth, 35, 'F');
+
+  // Thin Dark Red Line Accent
+  doc.setFillColor(153, 27, 27);
+  doc.rect(0, 35, pageWidth, 1.5, 'F');
+
+  const [logoTopo, logoMarcas] = await Promise.all([
+    getImageBase64(['/logo_branco_topo.png', '/logo_topo.png', '/logo_branco.png'], 3.455),
+    getImageBase64(['/logo_branco_marcas.png', '/logo_marcas.png'], 18.688)
+  ]);
+
+  const leftX = 14;
+  if (logoTopo) {
+    try {
+      const targetWidth = 48;
+      const targetHeight = targetWidth / (logoTopo.ratio || 3.455);
+      doc.addImage(logoTopo.base64, 'PNG', leftX, 4.5, targetWidth, targetHeight);
+    } catch {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(255, 255, 255);
+      doc.text('GRUPO COTRIPAR', leftX, 12);
+    }
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(255, 255, 255);
+    doc.text('GRUPO COTRIPAR', leftX, 12);
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.2);
+  doc.setTextColor(255, 255, 255);
+  doc.text('COMERCIO DE TRACTORES E IMPLEMENTOS DEL PARAGUAY (COTRIPAR) S.A. • RUC: 80019076-9', leftX, 22.5);
+
+  const rightX = pageWidth - 14;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.0);
+  doc.setTextColor(255, 255, 255);
+  doc.text('COMPARATIVO FINANCIERO — BANCO VS. COTRIPAR (USD)', rightX, 8.5, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.8);
+  doc.text(`Protocolo: ${codProtocolo}`, rightX, 12.8, { align: 'right' });
+  doc.text(`Fecha y Hora: ${fechaStr}`, rightX, 16.8, { align: 'right' });
+  doc.text(`Asesor Comercial: ${datos.vendedorNombre || 'Asesor Cotripar'}`, rightX, 20.8, { align: 'right' });
+
+  doc.setDrawColor(220, 38, 38);
+  doc.setLineWidth(0.2);
+  doc.line(14, 24.5, pageWidth - 14, 24.5);
+
+  if (logoMarcas) {
+    try {
+      const marcasWidth = 160;
+      const marcasHeight = marcasWidth / (logoMarcas.ratio || 18.688);
+      const marcasX = (pageWidth - marcasWidth) / 2;
+      doc.addImage(logoMarcas.base64, 'PNG', marcasX, 25.5, marcasWidth, marcasHeight);
+    } catch {
+      // Ignore
+    }
+  }
+
+  doc.setTextColor(30, 41, 59);
+  let currentY = 40;
+
+  // Box 1: Client and Quote Summary
+  const box1Height = 20;
+  doc.setFillColor(254, 252, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(14, currentY, pageWidth - 28, box1Height, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.2);
+  doc.setTextColor(200, 16, 46);
+  doc.text('1. DATOS DEL PRODUCTOR Y OPERACIÓN COTIZADA', 18, currentY + 5.2);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.2);
+  doc.setTextColor(71, 85, 105);
+  doc.text('Cliente / Razón Social:', 18, currentY + 11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text((datos.clienteNombre || 'Cliente General').substring(0, 38), 48, currentY + 11);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('RUC / C.I.:', 18, currentY + 16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(datos.clienteRuc || 'N/A', 48, currentY + 16);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Capital a Financiar:', 110, currentY + 11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(200, 16, 46);
+  doc.text(formatUSD(datos.capitalUSD), 142, currentY + 11);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Entrega Inicial:', 110, currentY + 16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(datos.anticipoUSD > 0 ? formatUSD(datos.anticipoUSD) : '$ 0 (Sin anticipo)', 142, currentY + 16);
+
+  currentY += box1Height + 3.5;
+
+  // Equipment Table
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.0);
+  doc.setTextColor(200, 16, 46);
+  doc.text('EQUIPAMIENTO / MAQUINARIAS COTIZADAS', 14, currentY);
+
+  const equipBody = datos.items.map((it, idx) => {
+    const cant = Number(it.cantidad) || 1;
+    const unit = Number(it.precioUnitarioUSD) || 0;
+    return [
+      String(idx + 1).padStart(2, '0'),
+      it.marca || 'Cotripar',
+      it.descripcion || 'Equipamiento Agrícola',
+      String(cant),
+      formatUSD(unit),
+      formatUSD(cant * unit)
+    ];
+  });
+
+  autoTable(doc, {
+    startY: currentY + 1.8,
+    margin: { left: 14, right: 14 },
+    head: [['Ítem', 'Marca', 'Descripción del Equipo / Implemento', 'Cant.', 'Precio Unit. (USD)', 'Subtotal (USD)']],
+    body: equipBody,
+    theme: 'grid',
+    styles: {
+      fontSize: 6.8,
+      cellPadding: 1.2,
+      textColor: [30, 41, 59],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.15,
+      halign: 'right'
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 10, fontStyle: 'bold' },
+      1: { halign: 'left', cellWidth: 26, fontStyle: 'bold' },
+      2: { halign: 'left' },
+      3: { halign: 'center', cellWidth: 12 },
+      4: { halign: 'right', cellWidth: 26 },
+      5: { halign: 'right', cellWidth: 28, fontStyle: 'bold' }
+    },
+    headStyles: {
+      fillColor: [200, 16, 46],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      halign: 'center',
+      fontSize: 7.0
+    }
+  });
+
+  currentY = (doc as any).lastAutoTable.finalY + 4;
+
+  // Section 2: Side-by-Side Comparison Table
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(200, 16, 46);
+  doc.text('2. COMPARATIVA EJECUTIVA LADO A LADO (BANCO VS. FINANCIACIÓN COTRIPAR)', 14, currentY);
+
+  const rb = datos.resultadoBanco;
+  const rc = datos.resultadoCotripar;
+
+  const plazoBancoTxt =
+    Math.abs(rb.plazoAnios - 1.5) < 0.05
+      ? '18 Meses (1.5 Años)'
+      : `${rb.plazoAnios} ${rb.plazoAnios === 1 ? 'Año (12 Meses)' : `Años (${rb.plazoAnios * 12} Meses)`}`;
+  const plazoCotriparTxt = `${rc.plazoMeses || 17} Meses (${rc.cantidadCuotas || rc.cronograma.length} cuotas)`;
+
+  const cuotaPromedioCotripar =
+    rc.cronograma.length > 0 ? rc.totalCuotas / rc.cronograma.length : rc.cuotaMayorAnio1;
+
+  const diffIntereses = rc.totalIntereses - rb.totalIntereses;
+  const diffIva = rc.totalIva - rb.totalIva;
+  const diffCFT = rc.costoFinancieroTotal - rb.costoFinancieroTotal;
+  const diffTotal = rc.totalPagado - rb.totalPagado;
+
+  const formatDiff = (val: number) => {
+    if (Math.abs(val) < 1) return '$ 0 (Igual)';
+    if (val > 0) return `Ahorro Banco: ${formatUSD(val)}`;
+    return `Diferencia: ${formatUSD(Math.abs(val))}`;
+  };
+
+  const compareRows = [
+    ['Capital Solicitado (USD)', formatUSD(rb.capital), formatUSD(rc.capital), 'Mismo Capital'],
+    ['Plazo y Estructura', `${plazoBancoTxt} • ${rb.frecuencia === 'semestral' ? 'Semestral' : 'Anual'}`, plazoCotriparTxt, 'Plazo Comparado'],
+    [
+      'Tasa de Interés Aplicada',
+      `${formatPercent(rb.tasaAnual)} Anual`,
+      `${(rc.tasaMensual || 0.80).toFixed(2)}% Mensual (${formatPercent(rc.tasaAnual)} Anual)`,
+      `${formatPercent(Math.max(0, rc.tasaAnual - rb.tasaAnual))} menor en Banco`
+    ],
+    [
+      'Gasto Administrativo',
+      `${formatUSD(rb.gastoAdmin)} (1% s/ capital)`,
+      '$ 0 (0% Exento)',
+      rb.gastoAdmin > 0 ? `+${formatUSD(rb.gastoAdmin)} en Banco` : '$ 0'
+    ],
+    ['Total Intereses Proyectados', formatUSD(rb.totalIntereses), formatUSD(rc.totalIntereses), formatDiff(diffIntereses)],
+    ['Total IVA s/ Intereses (10%)', formatUSD(rb.totalIva), formatUSD(rc.totalIva), formatDiff(diffIva)],
+    ['COSTO FINANCIERO TOTAL (CFT)', formatUSD(rb.costoFinancieroTotal), formatUSD(rc.costoFinancieroTotal), formatDiff(diffCFT)],
+    [
+      'Cuota Año 1 / Cuota Máxima',
+      `${formatUSD(rb.cuotaMayorAnio1)} (Mayor Año 1)`,
+      `${formatUSD(rc.cuotaMayorAnio1)} (Prom: ${formatUSD(cuotaPromedioCotripar)})`,
+      rb.cuotaMayorAnio1 < rc.cuotaMayorAnio1
+        ? `${formatUSD(rc.cuotaMayorAnio1 - rb.cuotaMayorAnio1)} menor en Banco`
+        : '-'
+    ],
+    ['TOTAL A PAGAR (Capital + CFT)', formatUSD(rb.totalPagado), formatUSD(rc.totalPagado), formatDiff(diffTotal)]
+  ];
+
+  autoTable(doc, {
+    startY: currentY + 2,
+    margin: { left: 14, right: 14 },
+    head: [
+      [
+        'Indicador Financiero',
+        `Financiación Bancaria (${datos.bancoNombre})`,
+        'Financiación Cotripar (Crédito Directo)',
+        'Comparativa / Ventaja'
+      ]
+    ],
+    body: compareRows,
+    theme: 'grid',
+    styles: {
+      fontSize: 7.2,
+      cellPadding: 1.8,
+      textColor: [30, 41, 59],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.15,
+      halign: 'right'
+    },
+    columnStyles: {
+      0: { halign: 'left', fontStyle: 'bold', cellWidth: 46 },
+      1: { halign: 'right', cellWidth: 45 },
+      2: { halign: 'right', cellWidth: 45 },
+      3: { halign: 'center', fontStyle: 'bold', cellWidth: 46 }
+    },
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      halign: 'center',
+      fontSize: 7.2
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && (data.row.index === 6 || data.row.index === 8)) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = data.row.index === 8 ? [254, 242, 242] : [241, 245, 249];
+        if (data.column.index === 1) {
+          data.cell.styles.textColor = [15, 118, 110];
+        } else if (data.column.index === 2) {
+          data.cell.styles.textColor = [200, 16, 46];
+        }
+      }
+    }
+  });
+
+  currentY = (doc as any).lastAutoTable.finalY + 4.5;
+
+  // Section 3: Recommendation / Commercial Advantage Box
+  const splitConclusion = doc.splitTextToSize(datos.conclusionTexto, pageWidth - 36);
+  const conclusionBoxH = Math.max(18, splitConclusion.length * 4 + 9);
+
+  doc.setFillColor(236, 253, 245); // emerald-50
+  doc.setDrawColor(16, 185, 129); // emerald-500
+  doc.setLineWidth(0.35);
+  doc.roundedRect(14, currentY, pageWidth - 28, conclusionBoxH, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.0);
+  doc.setTextColor(6, 95, 70);
+  doc.text('3. CONCLUSIÓN Y RECOMENDACIÓN COMERCIAL AL PRODUCTOR', 18, currentY + 5.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.2);
+  doc.setTextColor(15, 23, 42);
+  doc.text(splitConclusion, 18, currentY + 10.5);
+
+  currentY += conclusionBoxH + 5;
+
+  // Legal Disclaimer Box
+  if (currentY > pageHeight - 32) {
+    doc.addPage();
+    currentY = 20;
+  }
+
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(200, 16, 46);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(14, currentY, pageWidth - 28, 18, 1.5, 1.5, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.8);
+  doc.setTextColor(200, 16, 46);
+  doc.text('AVISO LEGAL IMPORTANTE:', 17, currentY + 4.8);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.4);
+  doc.setTextColor(71, 85, 105);
+  const disclaimer =
+    'Este reporte comparativo tiene carácter estrictamente informativo y referencial para análisis financiero del productor. Los montos incluyen IVA del 10% sobre intereses devengados y 1% de gasto administrativo en la modalidad bancaria (0% exento en Financiación Cotripar). Sujeto a evaluación y aprobación crediticia.';
+  doc.text(doc.splitTextToSize(disclaimer, pageWidth - 34), 17, currentY + 9);
+
+  // Footer
+  doc.setFontSize(6.2);
+  doc.setTextColor(148, 163, 184);
+  doc.text(
+    `COMERCIO DE TRACTORES E IMPLEMENTOS DEL PARAGUAY (COTRIPAR) S.A. • RUC: 80019076-9 • Valores expresados en Dólares Americanos (USD) • Sistema SAC ${APP_VERSION}`,
+    pageWidth / 2,
+    pageHeight - 7,
+    { align: 'center' }
+  );
+
+  return doc;
+}
+

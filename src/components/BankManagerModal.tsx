@@ -13,7 +13,9 @@ import {
   Check,
   RefreshCw,
   AlertCircle,
-  Handshake
+  Handshake,
+  Sparkles,
+  Save
 } from 'lucide-react';
 
 interface BankManagerModalProps {
@@ -30,6 +32,11 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
 
   const [bancos, setBancos] = useState<BancoTasa[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Tasas Oficiales Financiación Cotripar (Crédito Propio)
+  const [tasaHasta12mInput, setTasaHasta12mInput] = useState<string>('0.60');
+  const [tasaMas12mInput, setTasaMas12mInput] = useState<string>('0.80');
+  const [isSavingCotripar, setIsSavingCotripar] = useState<boolean>(false);
 
   // Form state
   const [entidadInput, setEntidadInput] = useState<string>('');
@@ -56,6 +63,62 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
+  const fetchConfigCotripar = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('config_financiacion_cotripar')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (!error && data) {
+        setTasaHasta12mInput(Number(data.tasa_hasta_12m ?? 0.60).toFixed(2));
+        setTasaMas12mInput(Number(data.tasa_mas_12m ?? 0.80).toFixed(2));
+      }
+    } catch {
+      // offline fallback 0.60 / 0.80
+    }
+  };
+
+  const handleSaveTasasCotripar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const val12 = parseFloat(tasaHasta12mInput);
+    const val18 = parseFloat(tasaMas12mInput);
+
+    if (isNaN(val12) || val12 <= 0 || val12 > 50 || isNaN(val18) || val18 <= 0 || val18 > 50) {
+      showToast('Ingrese tasas mensuales válidas (ej: 0.60% y 0.80%).');
+      return;
+    }
+
+    setIsSavingCotripar(true);
+    try {
+      const { error } = await supabase
+        .from('config_financiacion_cotripar')
+        .upsert(
+          {
+            id: 1,
+            tasa_hasta_12m: val12,
+            tasa_mas_12m: val18,
+            plazo_max_meses: 18,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: 'id' }
+        );
+
+      if (!error) {
+        setTasaHasta12mInput(val12.toFixed(2));
+        setTasaMas12mInput(val18.toFixed(2));
+        showToast(`¡Tasas oficiales de Financiación Cotripar actualizadas (${val12.toFixed(2)}% y ${val18.toFixed(2)}%)!`);
+      } else {
+        showToast('Error al guardar las tasas de Financiación Cotripar');
+      }
+    } catch {
+      showToast('Error de conexión con Supabase');
+    } finally {
+      setIsSavingCotripar(false);
+    }
+  };
+
   const fetchBancos = async () => {
     setIsLoading(true);
     try {
@@ -76,6 +139,7 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
 
   useEffect(() => {
     fetchBancos();
+    fetchConfigCotripar();
   }, []);
 
   const handleStartEdit = (b: BancoTasa) => {
@@ -237,7 +301,7 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
   };
 
   const handleResetDefaults = async () => {
-    if (!window.confirm('¿Restablecer las tasas bancarias a los 10 bancos oficiales de la planilla trimestral de Cotripar?')) {
+    if (!window.confirm('¿Restablecer las tasas bancarias a los 10 bancos oficiales y las tasas de Financiación Cotripar (0.60% / 0.80%)?')) {
       return;
     }
 
@@ -256,7 +320,21 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
           activo: true
         });
       }
-      showToast('¡10 Bancos oficiales de Cotripar restablecidos con éxito!');
+
+      await supabase.from('config_financiacion_cotripar').upsert(
+        {
+          id: 1,
+          tasa_hasta_12m: 0.60,
+          tasa_mas_12m: 0.80,
+          plazo_max_meses: 18,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: 'id' }
+      );
+      setTasaHasta12mInput('0.60');
+      setTasaMas12mInput('0.80');
+
+      showToast('¡10 Bancos oficiales y tasas Cotripar restablecidos con éxito!');
       fetchBancos();
     } catch {
       showToast('Error al restablecer tasas');
@@ -309,13 +387,104 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
           )}
 
           <button
-            onClick={fetchBancos}
+            onClick={() => {
+              fetchBancos();
+              fetchConfigCotripar();
+            }}
             className="p-2 border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-600 transition-colors"
             title="Refrescar tasas"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-cotripar-700' : ''}`} />
           </button>
         </div>
+      </div>
+
+      {/* Card Destacado: Tasas Oficiales — Financiación Cotripar (Crédito Propio) */}
+      <div className="bg-gradient-to-r from-red-50 via-white to-red-50/60 p-5 rounded-2xl border-2 border-cotripar-200 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-cotripar-100">
+          <div>
+            <h3 className="text-sm sm:text-base font-extrabold text-cotripar-800 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-cotripar-700" />
+              <span>🔴 Tasas Oficiales — Financiación Cotripar (Crédito Propio)</span>
+            </h3>
+            <p className="text-xs text-slate-600 mt-0.5">
+              Configuración exclusiva para Administradores. Estas tasas se aplican automáticamente en la calculadora según el plazo detectado de la última cuota.
+            </p>
+          </div>
+          <span className="self-start sm:self-auto text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-cotripar-700 text-white shadow-xs">
+            Tope Máx: 18 Meses • 0% Gasto Admin.
+          </span>
+        </div>
+
+        <form onSubmit={handleSaveTasasCotripar} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+          {/* Tasa 1 a 12 Meses */}
+          <div className="md:col-span-4 space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-800">
+                Tasa Mensual (1 a 12 Meses) — %
+              </label>
+              <span className="text-[10px] font-bold text-cotripar-700 bg-cotripar-50 px-2 py-0.5 rounded-md border border-cotripar-200">
+                Eq. {((parseFloat(tasaHasta12mInput) || 0) * 12).toFixed(2)}% anual
+              </span>
+            </div>
+            <div className="relative">
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                max="50"
+                required
+                value={tasaHasta12mInput}
+                onChange={(e) => setTasaHasta12mInput(e.target.value)}
+                className="w-full pl-3.5 pr-12 py-2.5 text-sm font-extrabold text-slate-900 bg-white border border-cotripar-200 rounded-xl focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+                placeholder="0.60"
+              />
+              <span className="absolute right-3.5 top-2.5 text-xs font-extrabold text-cotripar-700">
+                % / mes
+              </span>
+            </div>
+          </div>
+
+          {/* Tasa 13 a 18 Meses */}
+          <div className="md:col-span-4 space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-800">
+                Tasa Mensual (13 a 18 Meses) — %
+              </label>
+              <span className="text-[10px] font-bold text-cotripar-700 bg-cotripar-50 px-2 py-0.5 rounded-md border border-cotripar-200">
+                Eq. {((parseFloat(tasaMas12mInput) || 0) * 12).toFixed(2)}% anual
+              </span>
+            </div>
+            <div className="relative">
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                max="50"
+                required
+                value={tasaMas12mInput}
+                onChange={(e) => setTasaMas12mInput(e.target.value)}
+                className="w-full pl-3.5 pr-12 py-2.5 text-sm font-extrabold text-slate-900 bg-white border border-cotripar-200 rounded-xl focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+                placeholder="0.80"
+              />
+              <span className="absolute right-3.5 top-2.5 text-xs font-extrabold text-cotripar-700">
+                % / mes
+              </span>
+            </div>
+          </div>
+
+          {/* Botón Guardar Tasas Cotripar */}
+          <div className="md:col-span-4">
+            <button
+              type="submit"
+              disabled={isSavingCotripar}
+              className="w-full py-2.5 px-4 text-xs sm:text-sm font-extrabold text-white bg-cotripar-700 hover:bg-cotripar-800 active:bg-cotripar-900 rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              <span>{isSavingCotripar ? 'Guardando...' : '💾 Guardar Tasas Cotripar'}</span>
+            </button>
+          </div>
+        </form>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

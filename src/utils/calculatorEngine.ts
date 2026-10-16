@@ -196,7 +196,10 @@ export const MESES_MATRIZ_COTRIPAR: string[] = [
  * Determina el Bloque Operativo, la Fecha Tope de Vencimiento y el Plazo Máximo Permitido
  * según la Matriz Operativa de Plazos y Bloques de Cotripar S.A. (Ciclo 2026 - 2028).
  */
-export function getMatrizBloqueInfo(mesColocacionStr?: string): MatrizBloqueInfo {
+export function getMatrizBloqueInfo(
+  mesColocacionStr?: string,
+  tasasConfig?: { tasa_hasta_12m?: number; tasa_mas_12m?: number }
+): MatrizBloqueInfo {
   const defaultMonthStr = 'Octubre 2026';
   const raw = (mesColocacionStr || defaultMonthStr).trim();
   const parts = raw.split(/\s+/);
@@ -261,7 +264,9 @@ export function getMatrizBloqueInfo(mesColocacionStr?: string): MatrizBloqueInfo
     fechaTopeVencimiento = `20/03/${anio + 1}`;
   }
 
-  const tasaSugerida = plazoMaximo <= 12 ? 0.60 : 0.80;
+  const rate12 = tasasConfig?.tasa_hasta_12m != null ? Number(tasasConfig.tasa_hasta_12m) : 0.60;
+  const rate18 = tasasConfig?.tasa_mas_12m != null ? Number(tasasConfig.tasa_mas_12m) : 0.80;
+  const tasaSugerida = plazoMaximo <= 12 ? rate12 : rate18;
 
   // Normalizar nombre de mes con mayúscula inicial
   const capitalMes = mesName.charAt(0).toUpperCase() + mesName.slice(1);
@@ -277,8 +282,17 @@ export function getMatrizBloqueInfo(mesColocacionStr?: string): MatrizBloqueInfo
   };
 }
 
-export const getTasaMensualCotripar = (plazoMeses: number): number => {
-  return plazoMeses <= 12 ? 0.60 : 0.80;
+export const getTasaMensualCotripar = (
+  plazoMeses: number,
+  tasasConfig?: { tasa_hasta_12m?: number; tasa_mas_12m?: number }
+): number => {
+  const rate12 = tasasConfig?.tasa_hasta_12m != null && !isNaN(Number(tasasConfig.tasa_hasta_12m))
+    ? Number(tasasConfig.tasa_hasta_12m)
+    : 0.60;
+  const rate18 = tasasConfig?.tasa_mas_12m != null && !isNaN(Number(tasasConfig.tasa_mas_12m))
+    ? Number(tasasConfig.tasa_mas_12m)
+    : 0.80;
+  return plazoMeses <= 12 ? rate12 : rate18;
 };
 
 /**
@@ -452,10 +466,11 @@ export function calcularFCotripar(
   maquinaImplemento?: string,
   items?: ItemMaquinaria[],
   anticipoUSD?: number,
-  fechasCuotasParam?: string[]
+  fechasCuotasParam?: string[],
+  tasasConfig?: { tasa_hasta_12m?: number; tasa_mas_12m?: number }
 ): ResultadoAleman {
   const cap = Math.max(0, Number(capital) || 0);
-  const infoBloque = getMatrizBloqueInfo(mesColocacion);
+  const infoBloque = getMatrizBloqueInfo(mesColocacion, tasasConfig);
   const { mesNum, anio: anioColocacion } = parseMesColocacion(mesColocacion);
 
   // Determinar la lista de fechas de cuotas a procesar
@@ -477,8 +492,8 @@ export function calcularFCotripar(
   const plazoDetectado = calcularMesesDesdeColocacion(ultimaFechaISO, anioColocacion, mesNum);
   const plazoFinal = Math.max(1, Math.min(18, plazoDetectado));
 
-  // Ajuste Automático de la Tasa Mensual (0.60% vs 0.80%)
-  const tasaMensual = getTasaMensualCotripar(plazoFinal);
+  // Ajuste Automático de la Tasa Mensual según configuración de Supabase (fallback 0.60% vs 0.80%)
+  const tasaMensual = getTasaMensualCotripar(plazoFinal, tasasConfig);
   const tasaAnual = tasaMensual * 12;
 
   // 0% Gasto Administrativo en Financiación Cotripar

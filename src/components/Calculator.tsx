@@ -26,7 +26,7 @@ import {
   parseMesColocacion,
   calcularMesesDesdeColocacion
 } from '../utils/calculatorEngine';
-import { generarPDFSimulacion } from '../utils/pdfGenerator';
+import { generarPDFSimulacion, generarPDFComparativo } from '../utils/pdfGenerator';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -50,7 +50,11 @@ import {
   Tag,
   CalendarClock,
   AlertCircle,
-  Lock
+  Lock,
+  Scale,
+  ArrowLeftRight,
+  TrendingDown,
+  X
 } from 'lucide-react';
 
 interface CalculatorProps {
@@ -70,6 +74,15 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
   // Mode Selection: Financiación Bancaria vs Financiación Cotripar
   const [tipoFinanciacion, setTipoFinanciacion] = useState<TipoFinanciacion>('BANCARIA');
+
+  // Tasas Oficiales Financiación Cotripar desde Supabase (con fallback 0.60 / 0.80)
+  const [tasasCotriparConfig, setTasasCotriparConfig] = useState<{
+    tasa_hasta_12m: number;
+    tasa_mas_12m: number;
+  }>({
+    tasa_hasta_12m: 0.60,
+    tasa_mas_12m: 0.80
+  });
 
   // Marcas de Productos from Supabase
   const [marcas, setMarcas] = useState<MarcaProducto[]>([]);
@@ -105,6 +118,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const [periodicidadCotripar, setPeriodicidadCotripar] = useState<PeriodicidadCotripar>('semestral_zafra');
   const [esquemaSemestralCotripar, setEsquemaSemestralCotripar] = useState<EsquemaSemestralCotripar>('amortizacion_constante');
 
+  // Comparative Modal state (Banco vs. Cotripar)
+  const [isCompareModalOpen, setIsCompareModalOpen] = useState<boolean>(false);
+  const [compareBancoId, setCompareBancoId] = useState<string>('');
+  const [comparePlazoAnios, setComparePlazoAnios] = useState<number>(1.5);
+  const [compareEsquemaBancario, setCompareEsquemaBancario] = useState<ModalidadSemestral>('constante');
+  const [isGeneratingComparePdf, setIsGeneratingComparePdf] = useState<boolean>(false);
 
   // Banks from Supabase
   const [bancos, setBancos] = useState<BancoTasa[]>([]);
@@ -156,6 +175,26 @@ export const Calculator: React.FC<CalculatorProps> = ({
     }
 
     return null;
+  };
+
+  // Fetch Tasas Oficiales Cotripar from Supabase
+  const fetchConfigCotripar = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('config_financiacion_cotripar')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (!error && data) {
+        setTasasCotriparConfig({
+          tasa_hasta_12m: Number(data.tasa_hasta_12m ?? 0.60),
+          tasa_mas_12m: Number(data.tasa_mas_12m ?? 0.80)
+        });
+      }
+    } catch {
+      // fallback 0.60 / 0.80
+    }
   };
 
   // Fetch Marcas from Supabase
@@ -212,6 +251,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
         setBancos(data);
         if (!selectedBancoId) {
           setSelectedBancoId(data[0].id);
+          setCompareBancoId(data[0].id);
           const initialRate = getTasaPorPlazo(data[0], plazoAnios) ?? Number(data[0].tasa_anual);
           setTasaAnual(Number(initialRate));
         }
@@ -228,6 +268,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
         setBancos(defaults);
         if (!selectedBancoId) {
           setSelectedBancoId(defaults[0].id);
+          setCompareBancoId(defaults[0].id);
           const initialRate = getTasaPorPlazo(defaults[0], plazoAnios) ?? defaults[0].tasa_anual;
           setTasaAnual(Number(initialRate));
         }
@@ -242,12 +283,13 @@ export const Calculator: React.FC<CalculatorProps> = ({
   useEffect(() => {
     fetchMarcas();
     fetchBancos();
+    fetchConfigCotripar();
   }, []);
 
   // Financiación Cotripar Block info, date limits and dynamic rate
   const infoBloqueActivo = useMemo(() => {
-    return getMatrizBloqueInfo(mesColocacion);
-  }, [mesColocacion]);
+    return getMatrizBloqueInfo(mesColocacion, tasasCotriparConfig);
+  }, [mesColocacion, tasasCotriparConfig]);
 
   const fechaTopeISO = useMemo(() => {
     return fechaDDMMYYYYToISO(infoBloqueActivo.fechaTopeVencimiento);
@@ -271,10 +313,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
     return calcularMesesDesdeColocacion(ultimaFechaCuotaISO, anioColocacion, mesColocacionNum);
   }, [ultimaFechaCuotaISO, anioColocacion, mesColocacionNum]);
 
-  // Ajuste automático de la tasa (0.60% vs 0.80%)
+  // Ajuste automático de la tasa según configuración Supabase (0.60% vs 0.80%)
   const tasaMensualCalculada = useMemo(() => {
-    return getTasaMensualCotripar(plazoDetectadoMeses);
-  }, [plazoDetectadoMeses]);
+    return getTasaMensualCotripar(plazoDetectadoMeses, tasasCotriparConfig);
+  }, [plazoDetectadoMeses, tasasCotriparConfig]);
 
   const handleMesColocacionChange = (newMes: string) => {
     setMesColocacion(newMes);
@@ -539,7 +581,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
         undefined,
         items,
         anticipoUSD,
-        fechasCuotas
+        fechasCuotas,
+        tasasCotriparConfig
       );
     }
     return calcularSistemaAleman(
@@ -564,8 +607,120 @@ export const Calculator: React.FC<CalculatorProps> = ({
     esquemaSemestralCotripar,
     items,
     anticipoUSD,
-    fechasCuotas
+    fechasCuotas,
+    tasasCotriparConfig
   ]);
+
+  // Motor matemático en paralelo para Comparativa Ejecutiva (Cenário A: Banco vs. Cenário B: Cotripar)
+  const compareBancoObj = useMemo(() => {
+    return bancos.find((b) => b.id === (compareBancoId || selectedBancoId)) || bancos[0];
+  }, [bancos, compareBancoId, selectedBancoId]);
+
+  const compareBancoNombre = useMemo(() => {
+    return compareBancoObj ? compareBancoObj.entidad : selectedBancoNombre;
+  }, [compareBancoObj, selectedBancoNombre]);
+
+  const compareTasaBancaria = useMemo(() => {
+    const rate = getTasaPorPlazo(compareBancoObj, comparePlazoAnios);
+    if (rate != null && rate > 0) return Number(rate);
+    return Number(compareBancoObj?.tasa_anual ?? tasaAnual ?? 7.0);
+  }, [compareBancoObj, comparePlazoAnios, tasaAnual]);
+
+  const escenarioBancario: ResultadoAleman = useMemo(() => {
+    const freqBancaria: FrecuenciaPago =
+      comparePlazoAnios === 1.5 ? 'semestral' : (fechasCuotas.length >= 2 ? 'semestral' : frecuencia);
+    return calcularSistemaAleman(
+      capital,
+      compareTasaBancaria,
+      comparePlazoAnios,
+      freqBancaria,
+      compareEsquemaBancario,
+      compareBancoNombre
+    );
+  }, [capital, compareTasaBancaria, comparePlazoAnios, fechasCuotas.length, frecuencia, compareEsquemaBancario, compareBancoNombre]);
+
+  const escenarioCotripar: ResultadoAleman = useMemo(() => {
+    return calcularFCotripar(
+      capital,
+      mesColocacion,
+      plazoDetectadoMeses,
+      periodicidadCotripar,
+      esquemaSemestralCotripar,
+      undefined,
+      items,
+      anticipoUSD,
+      fechasCuotas,
+      tasasCotriparConfig
+    );
+  }, [
+    capital,
+    mesColocacion,
+    plazoDetectadoMeses,
+    periodicidadCotripar,
+    esquemaSemestralCotripar,
+    items,
+    anticipoUSD,
+    fechasCuotas,
+    tasasCotriparConfig
+  ]);
+
+  // Cálculo de conclusión comercial y ahorro
+  const conclusionComparativa = useMemo(() => {
+    const ahorroCFT = escenarioCotripar.costoFinancieroTotal - escenarioBancario.costoFinancieroTotal;
+    const ahorroTotal = escenarioCotripar.totalPagado - escenarioBancario.totalPagado;
+    const diffTasaAnual = Math.max(0, escenarioCotripar.tasaAnual - escenarioBancario.tasaAnual);
+    const ahorroCuotaAnio1 = escenarioCotripar.cuotaMayorAnio1 - escenarioBancario.cuotaMayorAnio1;
+
+    if (ahorroCFT > 0) {
+      return {
+        esAhorroDirecto: true,
+        ahorroPrincipalUSD: ahorroCFT,
+        diferenciaTasa: diffTasaAnual,
+        textoResumen: `💡 Venta Conveniente por Banco: Financiar a través de ${compareBancoNombre} representa un ahorro de ${formatUSD(
+          ahorroCFT
+        )} en costos financieros totales en comparación con el crédito directo de Cotripar, debido a la tasa preferencial bancaria (${formatPercent(
+          escenarioBancario.tasaAnual
+        )} anual vs. ${formatPercent(escenarioCotripar.tasaAnual)} nominal anual en Cotripar).`
+      };
+    }
+
+    // Si el plazo bancario seleccionado es más largo (ej: 3 a 6 años), destacamos la menor tasa anual y el alivio en la cuota
+    const plazoEquiv = plazoDetectadoMeses <= 12 ? 1 : 1.5;
+    const tasaEquiv = getTasaPorPlazo(compareBancoObj, plazoEquiv) ?? compareTasaBancaria;
+    const bancoPlazoEquiv = calcularSistemaAleman(
+      capital,
+      tasaEquiv,
+      plazoEquiv,
+      'semestral',
+      'constante',
+      compareBancoNombre
+    );
+    const ahorroEnPlazoEquiv = Math.max(0, escenarioCotripar.costoFinancieroTotal - bancoPlazoEquiv.costoFinancieroTotal);
+
+    return {
+      esAhorroDirecto: ahorroTotal > 0,
+      ahorroPrincipalUSD: ahorroEnPlazoEquiv > 0 ? ahorroEnPlazoEquiv : Math.max(0, ahorroCuotaAnio1),
+      diferenciaTasa: diffTasaAnual,
+      textoResumen:
+        ahorroCuotaAnio1 > 0
+          ? `💡 Venta Conveniente por Banco: Financiar a través de ${compareBancoNombre} ofrece una tasa preferencial de ${formatPercent(
+              escenarioBancario.tasaAnual
+            )} anual (${formatPercent(diffTasaAnual)} menor que el ${formatPercent(
+              escenarioCotripar.tasaAnual
+            )} nominal anual de Cotripar) y reduce la carga de cuota del productor en ${formatUSD(
+              ahorroCuotaAnio1
+            )} en el primer año${
+              ahorroEnPlazoEquiv > 0
+                ? `, generando además un ahorro de ${formatUSD(ahorroEnPlazoEquiv)} en costos financieros a plazo equivalente.`
+                : '.'
+            }`
+          : `💡 Venta Conveniente por Banco: Financiar a través de ${compareBancoNombre} permite acceder a una tasa preferencial de ${formatPercent(
+              escenarioBancario.tasaAnual
+            )} anual frente al ${formatPercent(escenarioCotripar.tasaAnual)} nominal anual (${(
+              escenarioCotripar.tasaMensual || 0.8
+            ).toFixed(2)}% mensual) del crédito directo de Cotripar.`
+    };
+  }, [escenarioCotripar, escenarioBancario, compareBancoNombre, plazoDetectadoMeses, compareBancoObj, compareTasaBancaria, capital]);
 
   const capitalPresets = [25000, 50000, 75000, 110000, 150000, 200000];
 
@@ -594,10 +749,102 @@ export const Calculator: React.FC<CalculatorProps> = ({
     setEsquemaSemestralCotripar('amortizacion_constante');
     if (bancos.length > 0) {
       setSelectedBancoId(bancos[0].id);
+      setCompareBancoId(bancos[0].id);
       const defaultRate = getTasaPorPlazo(bancos[0], 5) ?? Number(bancos[0].tasa_anual);
       setTasaAnual(Number(defaultRate));
     }
     showToast('Parámetros restablecidos.');
+  };
+
+  // Abrir Modal Comparativo (Banco vs. Cotripar) con validación obligatoria
+  const handleAbrirComparativo = () => {
+    const hasValidItems =
+      items.length > 0 &&
+      items.every(
+        (it) =>
+          it.descripcion.trim() !== '' &&
+          Number(it.precioUnitarioUSD) > 0 &&
+          it.marca &&
+          it.marca.trim() !== ''
+      );
+
+    if (!clienteNombre.trim() || !clienteRuc.trim() || !hasValidItems) {
+      setValidationTriggered(true);
+      if (!clienteNombre.trim() || !clienteRuc.trim()) {
+        showToast('Para comparar, ingrese primero el Nombre del Cliente y RUC / C.I.');
+      } else {
+        showToast('Para comparar, ingrese Marca, Descripción y Precio Unitario de cada equipo cotizado.');
+      }
+      return;
+    }
+
+    if (capital < 1000) {
+      showToast('El Capital a financiar debe ser de al menos 1.000 USD.');
+      return;
+    }
+
+    if (tipoFinanciacion === 'F_COTRIPAR' && errorFechasCuotas) {
+      setValidationTriggered(true);
+      showToast(errorFechasCuotas);
+      return;
+    }
+
+    // Sincronizar el banco seleccionado y el plazo bancario equivalente (1 año si <= 12m, 1.5 años / 18m si > 12m)
+    setCompareBancoId(selectedBancoId || bancos[0]?.id || '');
+    const plazoEquivalente = plazoDetectadoMeses <= 12 ? 1 : 1.5;
+    setComparePlazoAnios(plazoEquivalente);
+    setCompareEsquemaBancario(
+      esquemaSemestralCotripar === 'interes_primero' ? 'zafra_interes_primero' : 'constante'
+    );
+    setIsCompareModalOpen(true);
+  };
+
+  // Descargar / Imprimir Reporte Comparativo en PDF (A4)
+  const handleDescargarPDFComparativo = async () => {
+    setIsGeneratingComparePdf(true);
+    try {
+      const clienteFinal = clienteNombre.trim() || 'Cliente General';
+      const rucFinal = clienteRuc.trim() || 'N/A';
+      const maquinaFinal =
+        items
+          .filter((it) => it.descripcion.trim())
+          .map(
+            (it) =>
+              `${it.marca ? `[${it.marca}] ` : ''}${it.cantidad > 1 ? `${it.cantidad}x ` : ''}${it.descripcion.trim()}`
+          )
+          .join(' + ') || 'Equipamiento Agrícola Cotripar';
+
+      const doc = await generarPDFComparativo({
+        vendedorNombre: currentUser?.nombre || 'Asesor Cotripar',
+        clienteNombre: clienteFinal,
+        clienteRuc: rucFinal,
+        maquinaDescripcion: maquinaFinal,
+        items,
+        anticipoUSD,
+        capitalUSD: capital,
+        bancoNombre: compareBancoNombre,
+        resultadoBanco: escenarioBancario,
+        resultadoCotripar: escenarioCotripar,
+        conclusionTexto: conclusionComparativa.textoResumen.replace('💡 ', '')
+      });
+
+      const blobUrl = (doc.output('bloburl') as any)?.toString() || '';
+      try {
+        window.open(blobUrl, '_blank');
+      } catch {
+        // Ignore popup blocker
+      }
+
+      const safeName = clienteFinal.replace(/\s+/g, '_');
+      const safeRuc = rucFinal.replace(/\s+/g, '');
+      doc.save(`Cotripar_Comparativo_${safeName}_${safeRuc}.pdf`);
+      showToast('¡Reporte Comparativo (Banco vs. Cotripar) generado en PDF!');
+    } catch (err) {
+      console.error(err);
+      showToast('Error al generar el PDF comparativo');
+    } finally {
+      setIsGeneratingComparePdf(false);
+    }
   };
 
   // Single Action Flow: Calculate, Generate PDF, and Save to Supabase
@@ -1156,7 +1403,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                   </div>
                   <div className="flex items-center gap-1.5 self-start sm:self-auto">
                     <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-cotripar-700 text-white shadow-xs">
-                      {plazoDetectadoMeses <= 12 ? 'Tasa: 0.60% mes' : 'Tasa: 0.80% mes'}
+                      Tasa: {tasaMensualCalculada.toFixed(2)}% mes
                     </span>
                   </div>
                 </div>
@@ -1257,30 +1504,45 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 )}
               </div>
 
-              {/* C. Tasa de Interés Mensual 100% Bloqueada / Readonly */}
+              {/* C. Tasa de Interés Mensual 100% Bloqueada / Readonly para asesores + Atajo Admin */}
               <div className="space-y-1">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-1">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <Lock className="w-3.5 h-3.5 text-cotripar-700" />
-                    <span>Tasa de Interés Mensual (100% Bloqueada / Readonly)</span>
+                    <span>Tasa de Interés Mensual (Oficial Cotripar)</span>
                   </label>
-                  <span className="text-xs font-black text-cotripar-700 bg-cotripar-50 px-2.5 py-1 rounded-lg border border-cotripar-200">
-                    {tasaMensualCalculada.toFixed(2)}% mensual
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={onOpenBankManager}
+                        className="text-[11px] font-bold text-cotripar-700 hover:underline bg-cotripar-50 px-2 py-0.5 rounded-lg border border-cotripar-200 transition-colors"
+                      >
+                        ⚙️ Configurar Tasas Cotripar
+                      </button>
+                    )}
+                    <span className="text-xs font-black text-cotripar-700 bg-cotripar-50 px-2.5 py-1 rounded-lg border border-cotripar-200">
+                      {tasaMensualCalculada.toFixed(2)}% mensual
+                    </span>
+                  </div>
                 </div>
                 <div className="relative">
                   <input
                     type="text"
                     readOnly
                     disabled
-                    value={`${tasaMensualCalculada.toFixed(2)}% mensual (${plazoDetectadoMeses <= 12 ? '0.60% mensual — Plazo ≤ 12 meses' : '0.80% mensual — Plazo 13 a 18 meses'})`}
+                    value={`${tasaMensualCalculada.toFixed(2)}% mensual (${
+                      plazoDetectadoMeses <= 12
+                        ? `${tasasCotriparConfig.tasa_hasta_12m.toFixed(2)}% mensual — Plazo ≤ 12 meses`
+                        : `${tasasCotriparConfig.tasa_mas_12m.toFixed(2)}% mensual — Plazo 13 a 18 meses`
+                    })`}
                     className="w-full pl-3.5 pr-10 py-2.5 text-xs font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded-xl cursor-not-allowed select-none"
                   />
                   <Lock className="w-4 h-4 text-slate-400 absolute right-3.5 top-3 pointer-events-none" />
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium px-1">
-                  <span>🔒 Determinada automáticamente por el plazo de la última cuota (Inalterable)</span>
-                  <span>Eq. {plazoDetectadoMeses <= 12 ? '7.20%' : '9.60%'} nom. anual</span>
+                  <span>🔒 Determinada automáticamente por el plazo de la última cuota</span>
+                  <span>Eq. {(tasaMensualCalculada * 12).toFixed(2)}% nom. anual</span>
                 </div>
               </div>
 
@@ -1546,26 +1808,39 @@ export const Calculator: React.FC<CalculatorProps> = ({
           </div>
         </div>
 
-        {/* 8. Botão Único de Ação Principal em Vermelho Cotripar */}
-        <div className="pt-2 space-y-2">
-          <button
-            type="button"
-            disabled={isProcessing || (tipoFinanciacion === 'F_COTRIPAR' && Boolean(errorFechasCuotas))}
-            onClick={handleCalcularYGenerarPDF}
-            className="w-full py-3.5 bg-cotripar-700 hover:bg-cotripar-800 active:bg-cotripar-900 text-white font-extrabold rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-2 text-base transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Generando Proyección...</span>
-              </>
-            ) : (
-              <>
-                <FileCheck2 className="w-5 h-5" />
-                <span>CALCULAR Y GENERAR PDF</span>
-              </>
-            )}
-          </button>
+        {/* 8. Botones de Acción Principal y Comparativo Ejecutivo (Banco vs. Cotripar) */}
+        <div className="pt-2 space-y-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+            <button
+              type="button"
+              disabled={isProcessing || (tipoFinanciacion === 'F_COTRIPAR' && Boolean(errorFechasCuotas))}
+              onClick={handleCalcularYGenerarPDF}
+              className="sm:col-span-7 py-3.5 px-4 bg-cotripar-700 hover:bg-cotripar-800 active:bg-cotripar-900 text-white font-extrabold rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-2 text-sm sm:text-base transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Generando Proyección...</span>
+                </>
+              ) : (
+                <>
+                  <FileCheck2 className="w-5 h-5 shrink-0" />
+                  <span>CALCULAR Y GENERAR PDF</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              disabled={isProcessing || (tipoFinanciacion === 'F_COTRIPAR' && Boolean(errorFechasCuotas))}
+              onClick={handleAbrirComparativo}
+              className="sm:col-span-5 py-3.5 px-3 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-extrabold rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-1.5 text-xs sm:text-sm transition-all border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Comparar lado a lado Financiación Bancaria vs. Financiación Cotripar"
+            >
+              <ArrowLeftRight className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>🔄 Comparar Banco vs. Cotripar</span>
+            </button>
+          </div>
 
           <div className="text-center">
             <button
@@ -1579,6 +1854,312 @@ export const Calculator: React.FC<CalculatorProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Modal Comparativo Ejecutivo (Banco vs. Cotripar) */}
+      {isCompareModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col">
+            {/* Cabecera Ejecutiva */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-cotripar-800 p-4 sm:p-5 text-white flex items-start justify-between gap-3 shrink-0">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-xl bg-white/10 text-amber-300">
+                    <Scale className="w-5 h-5" />
+                  </span>
+                  <h3 className="text-base sm:text-lg font-extrabold tracking-tight">
+                    Comparativa Comercial: Financiación Bancaria vs. Financiación Cotripar
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-200 font-medium">
+                  Productor: <strong className="text-white">{clienteNombre || 'Cliente General'}</strong> • RUC/C.I.:{' '}
+                  <strong className="text-white">{clienteRuc || 'N/A'}</strong> • Capital:{' '}
+                  <strong className="text-amber-300">{formatUSD(capital)}</strong>
+                </p>
+                <p className="text-[11px] text-slate-300 truncate max-w-2xl">
+                  Equipos:{' '}
+                  {items
+                    .filter((it) => it.descripcion.trim())
+                    .map((it) => `${it.marca ? `[${it.marca}] ` : ''}${it.cantidad}x ${it.descripcion}`)
+                    .join(' + ') || 'Equipamiento Agrícola Cotripar'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCompareModalOpen(false)}
+                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                title="Cerrar comparativo"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Cuerpo scrollable del Modal */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1">
+              {/* Selector Rápido de Banco y Plazo Bancario para comparar en vivo */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-1">
+                  <div className="space-y-0.5 min-w-[200px]">
+                    <label className="text-[10px] font-bold uppercase text-slate-500 block">
+                      Entidad Bancaria Comparada
+                    </label>
+                    <select
+                      value={compareBancoId || selectedBancoId}
+                      onChange={(e) => setCompareBancoId(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-cotripar-700 outline-none"
+                    >
+                      {bancos.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.entidad}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-0.5">
+                    <label className="text-[10px] font-bold uppercase text-slate-500 block">
+                      Plazo Bancario
+                    </label>
+                    <div className="flex flex-wrap gap-1">
+                      {[1, 1.5, 2, 3, 4, 5, 6].map((p) => {
+                        const isEq = (plazoDetectadoMeses <= 12 && p === 1) || (plazoDetectadoMeses > 12 && p === 1.5);
+                        return (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setComparePlazoAnios(p)}
+                            className={`px-2 py-1 text-[11px] font-extrabold rounded-lg border transition-all ${
+                              comparePlazoAnios === p
+                                ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {p === 1.5 ? '18m' : `${p}a`}
+                            {isEq ? ' (Eq.)' : ''}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full inline-block">
+                    ✓ Mismo Capital: {formatUSD(capital)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Cards Comparativos Lado a Lado */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Columna / Card 1: Financiación Bancaria */}
+                <div className="rounded-2xl border-2 border-emerald-500/80 bg-gradient-to-b from-emerald-50/40 to-white p-4 sm:p-5 shadow-sm space-y-3.5 relative">
+                  <div className="flex items-center justify-between border-b border-emerald-200/80 pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center">
+                        <Building2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 block">
+                          Opción Recomendada • Banco
+                        </span>
+                        <h4 className="text-sm sm:text-base font-extrabold text-slate-900">
+                          Financiación Bancaria ({compareBancoNombre})
+                        </h4>
+                      </div>
+                    </div>
+                    <span className="text-xs font-black px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      {formatPercent(escenarioBancario.tasaAnual)} Anual
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 font-medium">Capital Financiado:</span>
+                      <span className="font-bold text-slate-900">{formatUSD(escenarioBancario.capital)}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 font-medium">Plazo / Periodicidad:</span>
+                      <span className="font-bold text-slate-800">
+                        {comparePlazoAnios === 1.5
+                          ? '18 Meses (3 Semestres)'
+                          : `${comparePlazoAnios} ${comparePlazoAnios === 1 ? 'Año' : 'Años'} (${
+                              escenarioBancario.frecuencia === 'semestral' ? 'Semestral' : 'Anual'
+                            })`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 font-medium">Tasa Nominal Anual:</span>
+                      <span className="font-extrabold text-emerald-700">
+                        {formatPercent(escenarioBancario.tasaAnual)} anual
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 font-medium">Gasto Administrativo (1%):</span>
+                      <span className="font-semibold text-slate-800">{formatUSD(escenarioBancario.gastoAdmin)}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 font-medium">Intereses Proyectados:</span>
+                      <span className="font-bold text-slate-900">{formatUSD(escenarioBancario.totalIntereses)}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 font-medium">IVA s/ Intereses (10%):</span>
+                      <span className="font-bold text-slate-900">{formatUSD(escenarioBancario.totalIva)}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 px-2.5 bg-emerald-50/80 rounded-xl border border-emerald-200">
+                      <span className="text-emerald-900 font-bold">Costo Financiero Total (CFT):</span>
+                      <span className="font-black text-emerald-800 text-sm">
+                        {formatUSD(escenarioBancario.costoFinancieroTotal)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-600 font-bold">Cuota Año 1 (Mayor):</span>
+                      <span className="font-extrabold text-slate-900">
+                        {formatUSD(escenarioBancario.cuotaMayorAnio1)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between pt-2 items-center">
+                      <span className="text-slate-900 font-extrabold text-xs sm:text-sm">TOTAL A PAGAR:</span>
+                      <span className="font-black text-emerald-700 text-base sm:text-lg">
+                        {formatUSD(escenarioBancario.totalPagado)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Columna / Card 2: Financiación Cotripar (Crédito Directo) */}
+                <div className="rounded-2xl border-2 border-cotripar-200 bg-gradient-to-b from-red-50/30 to-white p-4 sm:p-5 shadow-sm space-y-3.5">
+                  <div className="flex items-center justify-between border-b border-red-200/80 pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-cotripar-700 text-white flex items-center justify-center">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-cotripar-700 block">
+                          Crédito Propio • Directo
+                        </span>
+                        <h4 className="text-sm sm:text-base font-extrabold text-slate-900">
+                          Financiación Cotripar (Crédito Directo)
+                        </h4>
+                      </div>
+                    </div>
+                    <span className="text-xs font-black px-2.5 py-1 rounded-full bg-cotripar-100 text-cotripar-800 border border-cotripar-300">
+                      {(escenarioCotripar.tasaMensual || tasaMensualCalculada).toFixed(2)}% Mensual
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 font-medium">Capital Financiado:</span>
+                      <span className="font-bold text-slate-900">{formatUSD(escenarioCotripar.capital)}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 font-medium">Plazo / Cuotas Configuradas:</span>
+                      <span className="font-bold text-slate-800">
+                        {escenarioCotripar.plazoMeses} Meses ({fechasCuotas.length}{' '}
+                        {fechasCuotas.length === 1 ? 'cuota' : 'cuotas'})
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 font-medium">Tasa Mensual / Eq. Anual:</span>
+                      <span className="font-extrabold text-cotripar-700">
+                        {(escenarioCotripar.tasaMensual || tasaMensualCalculada).toFixed(2)}% mes (
+                        {formatPercent(escenarioCotripar.tasaAnual)} anual)
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 font-medium">Gasto Administrativo:</span>
+                      <span className="font-semibold text-emerald-700">$ 0 (0% Exento)</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 font-medium">Intereses Proyectados:</span>
+                      <span className="font-bold text-slate-900">{formatUSD(escenarioCotripar.totalIntereses)}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 font-medium">IVA s/ Intereses (10%):</span>
+                      <span className="font-bold text-slate-900">{formatUSD(escenarioCotripar.totalIva)}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 px-2.5 bg-red-50/80 rounded-xl border border-red-200">
+                      <span className="text-cotripar-900 font-bold">Costo Financiero Total (CFT):</span>
+                      <span className="font-black text-cotripar-800 text-sm">
+                        {formatUSD(escenarioCotripar.costoFinancieroTotal)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-600 font-bold">Cuota Promedio / Máxima:</span>
+                      <span className="font-extrabold text-slate-900">
+                        {formatUSD(
+                          escenarioCotripar.cronograma.length > 0
+                            ? escenarioCotripar.totalCuotas / escenarioCotripar.cronograma.length
+                            : escenarioCotripar.cuotaMayorAnio1
+                        )}{' '}
+                        / {formatUSD(escenarioCotripar.cuotaMayorAnio1)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between pt-2 items-center">
+                      <span className="text-slate-900 font-extrabold text-xs sm:text-sm">TOTAL A PAGAR:</span>
+                      <span className="font-black text-cotripar-700 text-base sm:text-lg">
+                        {formatUSD(escenarioCotripar.totalPagado)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cuadro de Conclusión / Ventaja Comercial (Recomendación al Productor) */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/70 to-emerald-50 border-2 border-emerald-400 shadow-sm space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-xl bg-emerald-600 text-white">
+                      <TrendingDown className="w-4 h-4" />
+                    </span>
+                    <h4 className="text-xs sm:text-sm font-black uppercase tracking-wider text-emerald-950">
+                      Conclusión y Recomendación Comercial al Productor
+                    </h4>
+                  </div>
+                  {conclusionComparativa.ahorroPrincipalUSD > 0 && (
+                    <span className="text-xs font-black px-3 py-1 rounded-full bg-emerald-700 text-white shadow-xs">
+                      Ahorro / Ventaja: {formatUSD(conclusionComparativa.ahorroPrincipalUSD)}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs sm:text-sm text-slate-800 font-semibold leading-relaxed">
+                  {conclusionComparativa.textoResumen}
+                </p>
+              </div>
+            </div>
+
+            {/* Botones en el Pie del Modal */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-end gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleDescargarPDFComparativo}
+                disabled={isGeneratingComparePdf}
+                className="w-full sm:w-auto py-2.5 px-5 bg-cotripar-700 hover:bg-cotripar-800 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+              >
+                {isGeneratingComparePdf ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Generando PDF Comparativo...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-4 h-4" />
+                    <span>📄 Imprimir / Descargar Reporte Comparativo (PDF)</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsCompareModalOpen(false)}
+                className="w-full sm:w-auto py-2.5 px-5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs sm:text-sm rounded-xl transition-all"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Success Modal with PDF Links */}
       {successModalData && (
@@ -1667,3 +2248,4 @@ export const Calculator: React.FC<CalculatorProps> = ({
     </div>
   );
 };
+
