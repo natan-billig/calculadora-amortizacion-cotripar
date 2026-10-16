@@ -25,11 +25,6 @@ interface BankManagerModalProps {
 export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast }) => {
   const { currentUser, isAdmin } = useAuth();
 
-  // Strict admin guard: sellers cannot access bank manager
-  if (!currentUser || currentUser.rol !== 'admin') {
-    return null;
-  }
-
   const [bancos, setBancos] = useState<BancoTasa[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -360,6 +355,11 @@ export const BankManagerModal: React.FC<BankManagerModalProps> = ({ showToast })
       showToast('Error al actualizar estado');
     }
   };
+
+  // Strict admin guard: sellers cannot access bank manager
+  if (!currentUser || currentUser.rol !== 'admin') {
+    return null;
+  }
 
   return (
     <div className="space-y-6">

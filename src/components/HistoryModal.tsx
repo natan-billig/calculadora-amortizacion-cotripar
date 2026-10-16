@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import type { SimulacionPDF, ResultadoAleman, ItemMaquinaria } from '../types';
 import { supabase } from '../lib/supabase';
 import { formatUSD, formatPercent } from '../utils/calculatorEngine';
-import { generarPDFSimulacion } from '../utils/pdfGenerator';
+import { generarPDFSimulacion, generarPDFComparativo } from '../utils/pdfGenerator';
 import { useAuth } from '../context/AuthContext';
 import {
   Search,
@@ -33,12 +33,23 @@ interface HistoryModalProps {
 
 type PeriodoTipo = 'todo' | 'mes' | 'semestre' | 'anio';
 
-const isCotriparSim = (sim?: { tipo_financiacion?: string | null; banco_entidad?: string | null } | null): boolean => {
+const isComparativoSim = (sim?: { tipo_financiacion?: string | null; comparativo_json?: any } | null): boolean => {
   if (!sim) return false;
+  return sim.tipo_financiacion === 'COMPARATIVO' || Boolean(sim.comparativo_json);
+};
+
+const isCotriparSim = (sim?: { tipo_financiacion?: string | null; banco_entidad?: string | null; comparativo_json?: any } | null): boolean => {
+  if (!sim) return false;
+  if (isComparativoSim(sim)) return false;
+  if (sim.tipo_financiacion === 'BANCARIA') return false;
   return sim.tipo_financiacion === 'F_COTRIPAR' || (sim.banco_entidad || '').toUpperCase().includes('COTRIPAR');
 };
 
-const normalizeBancoNombre = (sim?: { tipo_financiacion?: string | null; banco_entidad?: string | null } | null): string => {
+const normalizeBancoNombre = (sim?: { tipo_financiacion?: string | null; banco_entidad?: string | null; comparativo_json?: any } | null): string => {
+  if (isComparativoSim(sim)) {
+    const bName = sim?.comparativo_json?.bancoNombre;
+    return bName ? `Comparativo: ${bName} vs. Cotripar` : (sim?.banco_entidad?.trim() || 'Comparativo Banco vs. Cotripar');
+  }
   if (isCotriparSim(sim)) {
     return 'Financiación Cotripar';
   }
@@ -371,9 +382,14 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       });
       const proto = `COT-SIM-${dateObj.getFullYear()}${String(dateObj.getMonth() + 1).padStart(2, '0')}${String(dateObj.getDate()).padStart(2, '0')}-${(sim.id || '').substring(0, 4).toUpperCase()}`;
 
+      const isComparativo = isComparativoSim(sim);
       const isCotripar = isCotriparSim(sim);
-      const tipoFin = isCotripar ? 'Financiación Cotripar' : 'Financiación Bancaria (SAC)';
-      const bancoTxt = isCotripar ? 'Financiación Cotripar' : (sim.banco_entidad || 'Banco');
+      const tipoFin = isComparativo
+        ? 'Comparativo (Banco vs. Cotripar)'
+        : (isCotripar ? 'Financiación Cotripar' : 'Financiación Bancaria (SAC)');
+      const bancoTxt = isComparativo
+        ? normalizeBancoNombre(sim)
+        : (isCotripar ? 'Financiación Cotripar' : (sim.banco_entidad || 'Banco'));
       const plazoNum = Number(sim.plazo_anios);
       const plazoTxt = isCotripar
         ? `${sim.plazo_meses || 17} meses`
@@ -448,6 +464,16 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   };
 
   const handleDownloadHistoricalPDF = async (sim: SimulacionPDF) => {
+    const safeName = (sim.cliente_nombre || 'Cliente').replace(/\s+/g, '_');
+    const safeRuc = (sim.cliente_ruc || '').replace(/\s+/g, '');
+
+    if (isComparativoSim(sim) && sim.comparativo_json) {
+      const doc = await generarPDFComparativo(sim.comparativo_json);
+      doc.save(`Cotripar_Comparativo_${safeName}${safeRuc ? `_${safeRuc}` : ''}.pdf`);
+      showToast('¡PDF Comparativo histórico descargado con éxito!');
+      return;
+    }
+
     const isCotripar = isCotriparSim(sim);
     const tasaMensual = isCotripar
       ? (sim.tasa_anual > 2 ? sim.tasa_anual / 12 : sim.tasa_anual)
@@ -461,7 +487,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       plazoMeses: sim.plazo_meses,
       mesColocacion: sim.mes_colocacion,
       fechaTopeVencimiento: sim.fecha_tope_vencimiento,
-      tipoFinanciacion: isCotripar ? 'F_COTRIPAR' : sim.tipo_financiacion,
+      tipoFinanciacion: isCotripar ? 'F_COTRIPAR' : (sim.tipo_financiacion as any),
       frecuencia: (sim.periodicidad === 'semestral' || sim.periodicidad === 'semestral_zafra')
         ? 'semestral'
         : (sim.periodicidad === 'mensual' ? 'mensual' as any : 'anual'),
@@ -483,8 +509,6 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     };
 
     const doc = await generarPDFSimulacion(sim, resultadoMock);
-    const safeName = sim.cliente_nombre.replace(/\s+/g, '_');
-    const safeRuc = (sim.cliente_ruc || '').replace(/\s+/g, '');
     const prefix = isCotripar ? 'Cotripar_Financiacion_Cotripar' : 'Cotripar_Simulacion';
     doc.save(`${prefix}_${safeName}${safeRuc ? `_${safeRuc}` : ''}.pdf`);
     showToast('¡PDF histórico descargado con éxito!');
@@ -1128,7 +1152,17 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       </td>
 
                       <td className="py-3 px-3 whitespace-nowrap">
-                        {isCotriparSim(sim) ? (
+                        {isComparativoSim(sim) ? (
+                          <div>
+                            <span className="inline-flex items-center gap-1 font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
+                              🔄 {normalizeBancoNombre(sim)}
+                            </span>
+                            <span className="text-[10px] text-slate-500 block mt-0.5 font-semibold">
+                              Banco: {formatPercent(sim.tasa_anual)} vs. Cotripar:{' '}
+                              {Number(sim.comparativo_json?.resultadoCotripar?.tasaMensual ?? 0.80).toFixed(2)}% m.
+                            </span>
+                          </div>
+                        ) : isCotriparSim(sim) ? (
                           <div>
                             <span className="inline-flex items-center gap-1 font-extrabold text-cotripar-700 bg-cotripar-50 border border-cotripar-200 px-2 py-0.5 rounded-md text-[11px]">
                               Financiación Cotripar
@@ -1153,7 +1187,19 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       </td>
 
                       <td className="py-3 px-3 text-slate-600 whitespace-nowrap">
-                        {isCotriparSim(sim) ? (
+                        {isComparativoSim(sim) ? (
+                          <div>
+                            <span className="font-bold text-slate-900">
+                              {Math.abs(Number(sim.plazo_anios) - 1.5) < 0.05
+                                ? '18m'
+                                : `${sim.plazo_anios}a`}{' '}
+                              vs. {sim.plazo_meses || 17}m
+                            </span>
+                            <span className="text-[10px] text-emerald-700 block font-semibold">
+                              Comparativo Dual
+                            </span>
+                          </div>
+                        ) : isCotriparSim(sim) ? (
                           <div>
                             <span className="font-bold text-slate-900">{sim.plazo_meses || 17} meses</span>
                             <span className="text-[10px] text-cotripar-600 block font-medium">Tope: {sim.fecha_tope_vencimiento || '-'}</span>

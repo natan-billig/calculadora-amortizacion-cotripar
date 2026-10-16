@@ -30,3 +30,11 @@ dist-ssr
 
 .vercel
 .env*
+
+# Antigravity local MCP credentials
+.antigravity/mcp*.json
+.antigravity/*.local.json
+
+# Walkthrough and handover reports
+walkthrough*.md
+WALKTHROUGH*.md

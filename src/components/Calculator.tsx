@@ -412,7 +412,40 @@ export const Calculator: React.FC<CalculatorProps> = ({
   useEffect(() => {
     if (initialSimulation) {
       const loadedAnticipo = Number(initialSimulation.anticipo_usd) || 0;
-      if (initialSimulation.tipo_financiacion === 'F_COTRIPAR') {
+      if (initialSimulation.tipo_financiacion === 'COMPARATIVO' && initialSimulation.comparativo_json) {
+        const cmp = initialSimulation.comparativo_json;
+        setTipoFinanciacion('BANCARIA');
+        setAnticipoBancario(Number(cmp.anticipoBancarioUSD ?? loadedAnticipo) || 0);
+        setAnticipoCotripar(Number(cmp.anticipoCotriparUSD ?? loadedAnticipo) || 0);
+        if (cmp.resultadoBanco?.tasaAnual != null) {
+          setTasaAnual(Number(cmp.resultadoBanco.tasaAnual));
+        } else {
+          setTasaAnual(initialSimulation.tasa_anual);
+        }
+        if (cmp.comparePlazoAnios != null) {
+          setPlazoAnios(Number(cmp.comparePlazoAnios));
+          setComparePlazoAnios(Number(cmp.comparePlazoAnios));
+        } else {
+          setPlazoAnios(initialSimulation.plazo_anios);
+          setComparePlazoAnios(initialSimulation.plazo_anios);
+        }
+        if (cmp.mesColocacion) {
+          setMesColocacion(cmp.mesColocacion);
+        } else if (initialSimulation.mes_colocacion) {
+          setMesColocacion(initialSimulation.mes_colocacion);
+        }
+        if (Array.isArray(cmp.fechasCuotas) && cmp.fechasCuotas.length > 0) {
+          setFechasCuotas(cmp.fechasCuotas);
+        } else if (Array.isArray(initialSimulation.fechas_cuotas) && initialSimulation.fechas_cuotas.length > 0) {
+          setFechasCuotas(initialSimulation.fechas_cuotas);
+        }
+        const bancoTarget = (cmp.bancoNombre || initialSimulation.banco_entidad || '').toLowerCase();
+        const bFound = bancos.find(b => bancoTarget.includes(b.entidad.toLowerCase()));
+        if (bFound) {
+          setSelectedBancoId(bFound.id);
+          setCompareBancoId(bFound.id);
+        }
+      } else if (initialSimulation.tipo_financiacion === 'F_COTRIPAR') {
         setTipoFinanciacion('F_COTRIPAR');
         setAnticipoCotripar(loadedAnticipo);
         if (initialSimulation.mes_colocacion) {
@@ -858,12 +891,15 @@ export const Calculator: React.FC<CalculatorProps> = ({
     setIsCompareModalOpen(true);
   };
 
-  // Descargar / Imprimir Reporte Comparativo en PDF (A4)
+  // Descargar / Imprimir Reporte Comparativo en PDF (A4) y Guardar en Historial Supabase
   const handleDescargarPDFComparativo = async () => {
     setIsGeneratingComparePdf(true);
     try {
       const clienteFinal = clienteNombre.trim() || 'Cliente General';
       const rucFinal = clienteRuc.trim() || 'N/A';
+      const marcasList = Array.from(new Set(items.map((it) => it.marca?.trim()).filter(Boolean)));
+      const marcaProductoPrincipal = marcasList.join(', ') || (marcas[0]?.nombre || 'Cotripar');
+
       const maquinaFinal =
         items
           .filter((it) => it.descripcion.trim())
@@ -873,12 +909,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
           )
           .join(' + ') || 'Equipamiento Agrícola Cotripar';
 
-      const doc = await generarPDFComparativo({
+      const datosComparativo = {
         vendedorNombre: currentUser?.nombre || 'Asesor Cotripar',
         clienteNombre: clienteFinal,
         clienteRuc: rucFinal,
         maquinaDescripcion: maquinaFinal,
-        items,
+        items: items || [],
         subtotalEquiposUSD: subtotalEquipos,
         anticipoUSD: anticipoActivo,
         anticipoBancarioUSD: anticipoBancario,
@@ -890,7 +926,9 @@ export const Calculator: React.FC<CalculatorProps> = ({
         resultadoBanco: escenarioBancario,
         resultadoCotripar: escenarioCotripar,
         conclusionTexto: conclusionComparativa.textoResumen.replace('💡 ', '')
-      });
+      };
+
+      const doc = await generarPDFComparativo(datosComparativo);
 
       const blobUrl = (doc.output('bloburl') as any)?.toString() || '';
       try {
@@ -902,7 +940,73 @@ export const Calculator: React.FC<CalculatorProps> = ({
       const safeName = clienteFinal.replace(/\s+/g, '_');
       const safeRuc = rucFinal.replace(/\s+/g, '');
       doc.save(`Cotripar_Comparativo_${safeName}_${safeRuc}.pdf`);
-      showToast('¡Reporte Comparativo (Banco vs. Cotripar) generado en PDF!');
+
+      // Persistir Comparativo en el Historial (Supabase)
+      const cantidadCuotasBanco = Math.max(
+        1,
+        Math.round(
+          escenarioBancario.frecuencia === 'semestral'
+            ? escenarioBancario.plazoAnios * 2
+            : escenarioBancario.plazoAnios
+        )
+      );
+
+      const cleanComparativoPayload = {
+        usuario_id: currentUser?.id || null,
+        vendedor_nombre: currentUser?.nombre || 'Asesor Cotripar',
+        cliente_nombre: clienteFinal,
+        cliente_ruc: rucFinal,
+        maquina_implemento: maquinaFinal,
+        capital_usd: Number(escenarioBancario.capital) || 0,
+        gasto_admin_usd: Number(escenarioBancario.gastoAdmin) || 0,
+        banco_entidad: `Comparativo: ${compareBancoNombre} vs. Cotripar`,
+        tasa_anual: Number(escenarioBancario.tasaAnual) || 0,
+        plazo_anios: Number(escenarioBancario.plazoAnios) || 1,
+        periodicidad: escenarioBancario.frecuencia || 'semestral',
+        modalidad_semestral: escenarioBancario.modalidadSemestral || '',
+        total_intereses_usd: Number(escenarioBancario.totalIntereses) || 0,
+        total_iva_usd: Number(escenarioBancario.totalIva) || 0,
+        costo_financiero_total_usd: Number(escenarioBancario.costoFinancieroTotal) || 0,
+        total_pagado_usd: Number(escenarioBancario.totalPagado) || 0,
+        mayor_cuota_anio1_usd: Number(escenarioBancario.cuotaMayorAnio1) || 0,
+        cronograma_json: escenarioBancario.cronograma || [],
+        items_json: items || [],
+        anticipo_usd: Number(anticipoBancario) || 0,
+        tipo_financiacion: 'COMPARATIVO',
+        marca_producto: marcaProductoPrincipal,
+        mes_colocacion: infoBloqueActivo.mesNombre || '',
+        fecha_tope_vencimiento: infoBloqueActivo.fechaTopeVencimiento || '',
+        plazo_meses: Math.max(1, Math.round(plazoDetectadoMeses) || 12),
+        fechas_cuotas: fechasCuotas || [],
+        fecha_ultima_cuota: fechaISOToDDMMYYYY(ultimaFechaCuotaISO) || '',
+        cantidad_cuotas: cantidadCuotasBanco,
+        comparativo_json: {
+          ...datosComparativo,
+          compareBancoId: compareBancoId || selectedBancoId,
+          comparePlazoAnios,
+          compareEsquemaBancario,
+          mesColocacion,
+          fechasCuotas: fechasCuotas || [],
+          periodicidadCotripar,
+          esquemaSemestralCotripar,
+          desembolsoTotalBanco: conclusionComparativa.desembolsoTotalBanco,
+          desembolsoTotalCotripar: conclusionComparativa.desembolsoTotalCotripar,
+          diferenciaDesembolsoLiquida: conclusionComparativa.diferenciaDesembolsoLiquida,
+          ahorroPrincipalUSD: conclusionComparativa.ahorroPrincipalUSD
+        }
+      };
+
+      const { error: insertError } = await supabase
+        .from('simulaciones_pdf')
+        .insert([cleanComparativoPayload]);
+
+      if (insertError) {
+        console.error('Error al guardar comparativo en Supabase:', insertError);
+        showToast('Atención: El PDF comparativo se generó pero hubo un error al sincronizar con el historial');
+      } else {
+        console.log('Comparativo guardado con éxito en Supabase');
+        showToast('¡Reporte Comparativo (Banco vs. Cotripar) generado en PDF y guardado en el historial!');
+      }
     } catch (err) {
       console.error(err);
       showToast('Error al generar el PDF comparativo');
@@ -960,36 +1064,60 @@ export const Calculator: React.FC<CalculatorProps> = ({
         )
         .join(' + ') || 'Equipamiento Agrícola Cotripar';
 
+    const cantidadCuotasInt =
+      tipoFinanciacion === 'F_COTRIPAR'
+        ? Math.max(1, (fechasCuotas || []).length)
+        : Math.max(
+            1,
+            Math.round(
+              resultado.frecuencia === 'semestral'
+                ? resultado.plazoAnios * 2
+                : resultado.plazoAnios
+            )
+          );
+
     const simulacionPayload: SimulacionPDF = {
       usuario_id: currentUser?.id || null,
       vendedor_nombre: currentUser?.nombre || 'Asesor Cotripar',
       cliente_nombre: clienteFinal,
       cliente_ruc: rucFinal,
       maquina_implemento: maquinaFinal,
-      capital_usd: resultado.capital,
-      gasto_admin_usd: resultado.gastoAdmin,
+      capital_usd: Number(resultado.capital) || 0,
+      gasto_admin_usd: Number(resultado.gastoAdmin) || 0,
       banco_entidad: tipoFinanciacion === 'F_COTRIPAR' ? 'Financiación Cotripar' : selectedBancoNombre,
-      tasa_anual: resultado.tasaAnual,
-      plazo_anios: resultado.plazoAnios,
+      tasa_anual: Number(resultado.tasaAnual) || 0,
+      plazo_anios: Number(resultado.plazoAnios) || 1,
       periodicidad: tipoFinanciacion === 'F_COTRIPAR' ? periodicidadCotripar : resultado.frecuencia,
-      modalidad_semestral: tipoFinanciacion === 'F_COTRIPAR' ? esquemaSemestralCotripar : (resultado.modalidadSemestral || null),
-      total_intereses_usd: resultado.totalIntereses,
-      total_iva_usd: resultado.totalIva,
-      costo_financiero_total_usd: resultado.costoFinancieroTotal,
-      total_pagado_usd: resultado.totalPagado,
-      mayor_cuota_anio1_usd: resultado.cuotaMayorAnio1,
-      cronograma_json: resultado.cronograma,
-      items_json: items,
-      anticipo_usd: anticipoActivo,
+      modalidad_semestral:
+        tipoFinanciacion === 'F_COTRIPAR'
+          ? (esquemaSemestralCotripar || '')
+          : (resultado.modalidadSemestral || ''),
+      total_intereses_usd: Number(resultado.totalIntereses) || 0,
+      total_iva_usd: Number(resultado.totalIva) || 0,
+      costo_financiero_total_usd: Number(resultado.costoFinancieroTotal) || 0,
+      total_pagado_usd: Number(resultado.totalPagado) || 0,
+      mayor_cuota_anio1_usd: Number(resultado.cuotaMayorAnio1) || 0,
+      cronograma_json: resultado.cronograma || [],
+      items_json: items || [],
+      anticipo_usd: Number(anticipoActivo) || 0,
       tipo_financiacion: tipoFinanciacion,
       marca_producto: marcaProductoPrincipal,
-      mes_colocacion: tipoFinanciacion === 'F_COTRIPAR' ? infoBloqueActivo.mesNombre : '',
-      fecha_tope_vencimiento: tipoFinanciacion === 'F_COTRIPAR' ? infoBloqueActivo.fechaTopeVencimiento : '',
-      plazo_meses: tipoFinanciacion === 'F_COTRIPAR' ? plazoDetectadoMeses : Math.round(plazoAnios * 12),
-      fechas_cuotas: tipoFinanciacion === 'F_COTRIPAR' ? fechasCuotas : undefined,
-      fecha_ultima_cuota: tipoFinanciacion === 'F_COTRIPAR' ? fechaISOToDDMMYYYY(ultimaFechaCuotaISO) : undefined,
-      cantidad_cuotas: tipoFinanciacion === 'F_COTRIPAR' ? fechasCuotas.length : (resultado.frecuencia === 'semestral' ? Math.round(resultado.plazoAnios * 2) : resultado.plazoAnios)
+      mes_colocacion: tipoFinanciacion === 'F_COTRIPAR' ? (infoBloqueActivo.mesNombre || '') : '',
+      fecha_tope_vencimiento: tipoFinanciacion === 'F_COTRIPAR' ? (infoBloqueActivo.fechaTopeVencimiento || '') : '',
+      plazo_meses:
+        tipoFinanciacion === 'F_COTRIPAR'
+          ? Math.max(1, Math.round(plazoDetectadoMeses))
+          : Math.max(1, Math.round(plazoAnios * 12)),
+      fechas_cuotas: tipoFinanciacion === 'F_COTRIPAR' ? (fechasCuotas || []) : [],
+      fecha_ultima_cuota:
+        tipoFinanciacion === 'F_COTRIPAR' ? (fechaISOToDDMMYYYY(ultimaFechaCuotaISO) || '') : '',
+      cantidad_cuotas: cantidadCuotasInt,
+      comparativo_json: null
     };
+
+    const cleanPayload = Object.fromEntries(
+      Object.entries(simulacionPayload).filter(([_, v]) => v !== undefined)
+    );
 
     try {
       // 1. Generate PDF
@@ -1010,15 +1138,18 @@ export const Calculator: React.FC<CalculatorProps> = ({
       const filename = `${prefix}_${safeName}_${safeRuc}.pdf`;
       doc.save(filename);
 
-      // 2. Save in background to Supabase
-      supabase
+      // 2. Save to Supabase with await and visible error handling
+      const { error: insertError } = await supabase
         .from('simulaciones_pdf')
-        .insert(simulacionPayload)
-        .then(({ error }) => {
-          if (error) {
-            console.warn('Error saving simulation to Supabase:', error);
-          }
-        });
+        .insert([cleanPayload]);
+
+      if (insertError) {
+        console.error('Error al guardar simulación en Supabase:', insertError);
+        showToast('Atención: La simulación se generó en PDF pero hubo un error al sincronizar con el historial');
+      } else {
+        console.log('Simulación guardada con éxito en Supabase');
+        showToast('¡Simulación calculada, PDF generado y guardado en el historial con éxito!');
+      }
 
       // 3. Show Success Modal with action buttons
       setSuccessModalData({
@@ -1030,8 +1161,6 @@ export const Calculator: React.FC<CalculatorProps> = ({
         docInstance: doc,
         pdfBlobUrl: blobUrl
       });
-
-      showToast('¡Simulación calculada y PDF generado con éxito!');
     } catch (err) {
       console.error(err);
       showToast('Error al generar el reporte PDF');

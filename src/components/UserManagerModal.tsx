@@ -11,11 +11,6 @@ interface UserManagerModalProps {
 export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast }) => {
   const { currentUser, refreshUsers, refreshCurrentUser } = useAuth();
 
-  // Security guard: Only Admin can access
-  if (!currentUser || currentUser.rol !== 'admin') {
-    return null;
-  }
-
   const [users, setUsers] = useState<AppUser[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -102,7 +97,7 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
 
         if (!error) {
           showToast('Usuario actualizado correctamente');
-          if (currentUser.id === editingId) {
+          if (currentUser?.id === editingId) {
             await refreshCurrentUser();
           }
 
@@ -171,6 +166,11 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
       showToast('Error al actualizar estado del usuario');
     }
   };
+
+  // Security guard: Only Admin can access
+  if (!currentUser || currentUser.rol !== 'admin') {
+    return null;
+  }
 
   return (
     <div className="space-y-6">

@@ -1,4 +1,4 @@
-export const APP_VERSION = 'V.2.9';
+export const APP_VERSION = 'V.3.0';
 
 export interface ConfigFinanciacionCotripar {
   id: number;
@@ -23,7 +23,7 @@ export interface MarcaProducto {
   created_at?: string;
 }
 
-export type TipoFinanciacion = 'BANCARIA' | 'F_COTRIPAR';
+export type TipoFinanciacion = 'BANCARIA' | 'F_COTRIPAR' | 'COMPARATIVO';
 export type PeriodicidadCotripar = 'mensual' | 'semestral_zafra' | 'pago_unico';
 export type EsquemaSemestralCotripar = 'amortizacion_constante' | 'interes_primero';
 
@@ -214,5 +214,6 @@ export interface SimulacionPDF {
   fechas_cuotas?: string[];
   fecha_ultima_cuota?: string;
   cantidad_cuotas?: number;
+  comparativo_json?: any;
 }
 
