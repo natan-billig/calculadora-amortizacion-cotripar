@@ -34,19 +34,28 @@ interface HistoryModalProps {
 
 type PeriodoTipo = 'todo' | 'mes' | 'semestre' | 'anio';
 
-const isComparativoSim = (sim?: { tipo_financiacion?: string | null; comparativo_json?: any } | null): boolean => {
+const isComparativoSim = (sim?: { tipo_financiacion?: string | null; periodicidad?: string | null; banco_entidad?: string | null } | null): boolean => {
   if (!sim) return false;
-  return sim.tipo_financiacion === 'COMPARATIVO' || Boolean(sim.comparativo_json);
+  return sim.tipo_financiacion === 'COMPARATIVO' ||
+         sim.periodicidad === 'Comparativo Dual' ||
+         Boolean(sim.banco_entidad && sim.banco_entidad.includes('vs. Financiación Cotripar'));
 };
 
-const isCotriparSim = (sim?: { tipo_financiacion?: string | null; banco_entidad?: string | null; comparativo_json?: any } | null): boolean => {
+const isCotriparSim = (sim?: { tipo_financiacion?: string | null; banco_entidad?: string | null } | null): boolean => {
   if (!sim) return false;
   if (isComparativoSim(sim)) return false;
   if (sim.tipo_financiacion === 'BANCARIA') return false;
   return sim.tipo_financiacion === 'F_COTRIPAR' || (sim.banco_entidad || '').toUpperCase().includes('COTRIPAR');
 };
 
-const normalizeBancoNombre = (sim?: { tipo_financiacion?: string | null; banco_entidad?: string | null; comparativo_json?: any } | null): string => {
+const isBancoSim = (sim?: { tipo_financiacion?: string | null; banco_entidad?: string | null } | null): boolean => {
+  if (!sim) return false;
+  if (isComparativoSim(sim)) return false;
+  if (isCotriparSim(sim)) return false;
+  return true;
+};
+
+const normalizeBancoNombre = (sim?: { tipo_financiacion?: string | null; banco_entidad?: string | null; comparativo_json?: any; periodicidad?: string | null } | null): string => {
   if (isComparativoSim(sim)) {
     const bName = sim?.comparativo_json?.bancoNombre;
     return bName ? `Comparativo: ${bName} vs. Cotripar` : (sim?.banco_entidad?.trim() || 'Comparativo Banco vs. Cotripar');
@@ -197,9 +206,9 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
 
       // Tipo de Financiación filter
       if (selectedTipoFinanciacion !== 'todos') {
-        if (selectedTipoFinanciacion === 'COMPARATIVO' && !isComparativoSim(sim)) return false;
+        if (selectedTipoFinanciacion === 'COMPARATIVO' && !isComparativoSim(sim) && !sim.comparativo_json) return false;
         if (selectedTipoFinanciacion === 'F_COTRIPAR' && !isCotriparSim(sim)) return false;
-        if (selectedTipoFinanciacion === 'BANCARIA' && (isComparativoSim(sim) || isCotriparSim(sim))) return false;
+        if (selectedTipoFinanciacion === 'BANCARIA' && !isBancoSim(sim)) return false;
       }
 
       // Asesor filter
@@ -1215,7 +1224,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       </td>
 
                       <td className="py-3 px-3 whitespace-nowrap">
-                        {isComparativoSim(sim) && sim.tipo_financiacion === 'COMPARATIVO' ? (
+                        {isComparativoSim(sim) ? (
                           <div>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="inline-flex items-center gap-1 font-extrabold text-indigo-800 bg-indigo-100 border border-indigo-300 px-2 py-0.5 rounded-md text-[11px] shadow-xs">
@@ -1308,52 +1317,87 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
 
                       <td className="py-3 px-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1.5">
-                          {!isCotriparSim(sim) && (currentUser?.rol === 'admin' || currentUser?.rol === 'coordinador') && (
-                            <button
-                              onClick={() => handleOpenOfferLetterModal(sim)}
-                              className="px-2.5 py-1 text-cotripar-700 hover:text-white hover:bg-cotripar-700 bg-cotripar-50 border border-cotripar-200 rounded-lg transition-all duration-150 flex items-center gap-1 font-bold text-xs shadow-xs"
-                              title="Generar Carta de Oferta Comercial para el Banco"
-                            >
-                              <FileSignature className="w-3.5 h-3.5" />
-                              <span>Carta Oferta</span>
-                            </button>
-                          )}
+                          {isComparativoSim(sim) ? (
+                            <>
+                              {/* Fila Comparativa: Solo 1 botón de descarga (Balanza), Cargar y Eliminar. Sin Carta Oferta */}
+                              <button
+                                onClick={() => handleDownloadComparativoPDF(sim)}
+                                className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition-colors"
+                                title="Descargar Comparativo PDF"
+                              >
+                                <Scale className="w-4 h-4" />
+                              </button>
 
-                          {Boolean(sim.comparativo_json) && (
-                            <button
-                              onClick={() => handleDownloadComparativoPDF(sim)}
-                              className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition-colors"
-                              title="Descargar Reporte Comparativo (Banco vs. Cotripar)"
-                            >
-                              <Scale className="w-4 h-4" />
-                            </button>
-                          )}
+                              <button
+                                onClick={() => onLoadSimulation(sim)}
+                                className="p-1.5 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                                title="Cargar en la Calculadora"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </button>
 
-                          <button
-                            onClick={() => handleDownloadHistoricalPDF(sim)}
-                            className="p-1.5 text-slate-600 hover:text-cotripar-700 hover:bg-cotripar-50 rounded-lg transition-colors"
-                            title="Descargar Reporte PDF"
-                          >
-                            <FileDown className="w-4 h-4" />
-                          </button>
+                              {currentUser?.rol === 'admin' && (
+                                <button
+                                  onClick={() => sim.id && handleDelete(sim.id, sim.cliente_nombre)}
+                                  disabled={deletingId === sim.id}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Eliminar registro"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {/* Filas habituales: Cotripar o Banco */}
+                              {isBancoSim(sim) && (currentUser?.rol === 'admin' || currentUser?.rol === 'coordinador') && (
+                                <button
+                                  onClick={() => handleOpenOfferLetterModal(sim)}
+                                  className="px-2.5 py-1 text-cotripar-700 hover:text-white hover:bg-cotripar-700 bg-cotripar-50 border border-cotripar-200 rounded-lg transition-all duration-150 flex items-center gap-1 font-bold text-xs shadow-xs"
+                                  title="Generar Carta de Oferta Comercial para el Banco"
+                                >
+                                  <FileSignature className="w-3.5 h-3.5" />
+                                  <span>Carta Oferta</span>
+                                </button>
+                              )}
 
-                          <button
-                            onClick={() => onLoadSimulation(sim)}
-                            className="p-1.5 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Cargar en la Calculadora"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </button>
+                              {Boolean(sim.comparativo_json) && (
+                                <button
+                                  onClick={() => handleDownloadComparativoPDF(sim)}
+                                  className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition-colors"
+                                  title="Descargar Reporte Comparativo (Banco vs. Cotripar)"
+                                >
+                                  <Scale className="w-4 h-4" />
+                                </button>
+                              )}
 
-                          {currentUser?.rol === 'admin' && (
-                            <button
-                              onClick={() => sim.id && handleDelete(sim.id, sim.cliente_nombre)}
-                              disabled={deletingId === sim.id}
-                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Eliminar registro"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                              <button
+                                onClick={() => handleDownloadHistoricalPDF(sim)}
+                                className="p-1.5 text-slate-600 hover:text-cotripar-700 hover:bg-cotripar-50 rounded-lg transition-colors"
+                                title="Descargar Reporte PDF"
+                              >
+                                <FileDown className="w-4 h-4" />
+                              </button>
+
+                              <button
+                                onClick={() => onLoadSimulation(sim)}
+                                className="p-1.5 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                                title="Cargar en la Calculadora"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </button>
+
+                              {currentUser?.rol === 'admin' && (
+                                <button
+                                  onClick={() => sim.id && handleDelete(sim.id, sim.cliente_nombre)}
+                                  disabled={deletingId === sim.id}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Eliminar registro"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
