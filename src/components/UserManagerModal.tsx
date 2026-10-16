@@ -36,7 +36,7 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
     try {
       const { data, error } = await supabase
         .from('app_usuarios')
-        .select('*')
+        .select('id, nombre, username, rol, activo, created_at')
         .order('created_at', { ascending: true });
 
       if (!error && data) {
@@ -84,24 +84,18 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
         }
 
         const isTargetAdmin = editingUser?.rol === 'admin';
+        const finalRol = isTargetAdmin ? 'admin' : rol;
+        const finalActivo = isTargetAdmin ? true : activo;
+        const finalPassword = !isTargetAdmin && password.trim() !== '' ? password.trim() : null;
 
-        const updateData: Record<string, any> = {
-          nombre: nombre.trim(),
-          username: username.trim().toLowerCase(),
-          rol: isTargetAdmin ? 'admin' : rol, // Blindagem: admin nunca pode ser rebaixado para vendedor
-          activo: isTargetAdmin ? true : activo // Blindagem: admin nunca pode ser desativado
-        };
-
-        // REGRA CRÍTICA: Admin SÓ pode alterar senha de Vendedor!
-        // Se a conta for Admin, ignora/bloqueia qualquer password_hash vindo deste painel
-        if (!isTargetAdmin && password.trim() !== '') {
-          updateData.password_hash = password.trim();
-        }
-
-        const { error } = await supabase
-          .from('app_usuarios')
-          .update(updateData)
-          .eq('id', editingId);
+        const { error } = await supabase.rpc('app_upsert_user', {
+          p_id: editingId,
+          p_nombre: nombre.trim(),
+          p_username: username.trim().toLowerCase(),
+          p_password: finalPassword,
+          p_rol: finalRol,
+          p_activo: finalActivo
+        });
 
         if (!error) {
           showToast('Usuario actualizado correctamente');
@@ -122,15 +116,14 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
           return;
         }
 
-        const { error } = await supabase
-          .from('app_usuarios')
-          .insert({
-            nombre: nombre.trim(),
-            username: username.trim().toLowerCase(),
-            password_hash: password.trim(),
-            rol,
-            activo: true
-          });
+        const { error } = await supabase.rpc('app_upsert_user', {
+          p_id: null,
+          p_nombre: nombre.trim(),
+          p_username: username.trim().toLowerCase(),
+          p_password: password.trim(),
+          p_rol: rol,
+          p_activo: true
+        });
 
         if (!error) {
           showToast(`Usuario "${username}" creado exitosamente`);
@@ -155,10 +148,14 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
     }
 
     try {
-      const { error } = await supabase
-        .from('app_usuarios')
-        .update({ activo: !user.activo })
-        .eq('id', user.id);
+      const { error } = await supabase.rpc('app_upsert_user', {
+        p_id: user.id,
+        p_nombre: user.nombre,
+        p_username: user.username,
+        p_password: null,
+        p_rol: user.rol,
+        p_activo: !user.activo
+      });
 
       if (!error) {
         setUsers(prev =>

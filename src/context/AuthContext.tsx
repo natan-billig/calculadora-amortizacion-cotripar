@@ -19,28 +19,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchUsers = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('app_usuarios')
-        .select('id, nombre, username, rol, activo, created_at')
-        .eq('activo', true)
-        .order('nombre');
-
-      if (!error && data && data.length > 0) {
-        return data as AppUser[];
-      }
-    } catch (err) {
-      console.warn('Error fetching users from Supabase:', err);
-    }
-
-    const fallback: AppUser[] = [
-      { id: '6aabb1d7-684b-427c-a2e2-e6e7e73ced2d', nombre: 'Miguel Abellá', username: 'miguel', rol: 'admin', activo: true },
-      { id: '3b11cb0a-6d10-4675-bc55-97929ecc4731', nombre: 'Vendedor Cotripar', username: 'vendedor1', rol: 'vendedor', activo: true }
-    ];
-    return fallback;
-  };
-
   useEffect(() => {
     // ALWAYS start logged out - require active login every session
     try {
@@ -50,35 +28,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // ignore
     }
     setCurrentUser(null);
-    fetchUsers().finally(() => {
-      setIsLoading(false);
-    });
+    setIsLoading(false);
   }, []);
 
-  const login = async (username: string, passwordHash: string): Promise<{ success: boolean; error?: string }> => {
+  const login = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const { data, error } = await supabase
-        .from('app_usuarios')
-        .select('*')
-        .eq('username', username.trim().toLowerCase())
-        .eq('activo', true)
-        .single();
+      const { data, error } = await supabase.rpc('app_login', {
+        p_username: username.trim(),
+        p_password: password.trim()
+      });
 
-      if (error || !data) {
-        return { success: false, error: 'Usuario no encontrado o inactivo.' };
+      if (error || !data || !Array.isArray(data) || data.length === 0) {
+        return { success: false, error: 'Usuario o contraseña incorrectos' };
       }
 
-      if (data.password_hash !== passwordHash.trim()) {
-        return { success: false, error: 'Contraseña incorrecta.' };
-      }
-
+      const row = data[0];
       const user: AppUser = {
-        id: data.id,
-        nombre: data.nombre,
-        username: data.username,
-        rol: data.rol,
-        activo: data.activo,
-        created_at: data.created_at
+        id: row.id,
+        nombre: row.nombre,
+        username: row.username,
+        rol: row.rol,
+        activo: row.activo,
+        created_at: row.created_at
       };
 
       setCurrentUser(user);
@@ -116,7 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshUsers = async () => {
-    await fetchUsers();
+    // No-op: pre-authentication user listing removed for security (V.2.7)
   };
 
   const isAdmin = currentUser?.rol === 'admin';

@@ -45,8 +45,8 @@ Aplicación web integral para la simulación financiera, proyección de cuotas d
 Crear un archivo `.env` en la raíz del proyecto (este archivo está protegido e ignorado por Git):
 
 ```env
-VITE_SUPABASE_URL=https://erbuwkwkcnhczvcfndfi.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_SUPABASE_URL=https://xyzcompany.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbG...
 ```
 
 ---
@@ -66,17 +66,3 @@ npm run build
 # Previsualizar build de producción
 npm run preview
 ```
-
----
-
-## 👤 Usuarios de Acceso Predeterminados
-
-- **Administrador**:
-  - Usuario: `miguel`
-  - Contraseña: `admin123`
-  - Rol: `admin` (acceso a gestión de tasas, usuarios y eliminación de simulaciones)
-
-- **Vendedor / Asesor**:
-  - Usuario: `vendedor1`
-  - Contraseña: `cotripar123`
-  - Rol: `vendedor` (simulación, guardado de propuestas y descarga de reportes PDF)

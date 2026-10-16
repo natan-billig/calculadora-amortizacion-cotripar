@@ -1,4 +1,4 @@
-export const APP_VERSION = 'V.2.6';
+export const APP_VERSION = 'V.2.7';
 
 export interface ConfigFinanciacionCotripar {
   id: number;

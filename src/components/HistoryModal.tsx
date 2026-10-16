@@ -318,6 +318,15 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   }, [filteredSimulaciones]);
 
   // Export CSV Function (Excel Compatible with UTF-8 BOM and ;)
+  const sanitizeCSVCell = (val: string | number | null | undefined): string => {
+    if (val === null || val === undefined) return '""';
+    let str = String(val).replace(/"/g, '""');
+    if (/^[=\+\-@\t\r]/.test(str)) {
+      str = "'" + str;
+    }
+    return `"${str}"`;
+  };
+
   const handleExportCSV = () => {
     if (filteredSimulaciones.length === 0) {
       showToast('No hay datos para exportar con los filtros actuales');
@@ -377,19 +386,19 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         fecha,
         hora,
         proto,
-        `"${tipoFin}"`,
-        `"${(sim.vendedor_nombre || '').replace(/"/g, '""')}"`,
-        `"${(sim.cliente_nombre || '').replace(/"/g, '""')}"`,
-        `"${(sim.cliente_ruc || '').replace(/"/g, '""')}"`,
-        `"${(sim.marca_producto || '-').replace(/"/g, '""')}"`,
-        `"${(sim.maquina_implemento || '').replace(/"/g, '""')}"`,
-        `"${bancoTxt.replace(/"/g, '""')}"`,
-        `"${tasaTxt}"`,
+        sanitizeCSVCell(tipoFin),
+        sanitizeCSVCell(sim.vendedor_nombre || ''),
+        sanitizeCSVCell(sim.cliente_nombre || ''),
+        sanitizeCSVCell(sim.cliente_ruc || ''),
+        sanitizeCSVCell(sim.marca_producto || '-'),
+        sanitizeCSVCell(sim.maquina_implemento || ''),
+        sanitizeCSVCell(bancoTxt),
+        sanitizeCSVCell(tasaTxt),
         Number(sim.capital_usd || 0).toFixed(2),
         Number(sim.gasto_admin_usd || 0).toFixed(2),
-        `"${plazoTxt}"`,
-        `"${sim.periodicidad || 'anual'}"`,
-        `"${sim.modalidad_semestral || '-'}"`,
+        sanitizeCSVCell(plazoTxt),
+        sanitizeCSVCell(sim.periodicidad || 'anual'),
+        sanitizeCSVCell(sim.modalidad_semestral || '-'),
         Number(sim.total_intereses_usd || 0).toFixed(2),
         Number(sim.total_iva_usd || 0).toFixed(2),
         Number(sim.costo_financiero_total_usd || 0).toFixed(2),

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cotripar-pwa-v1.7';
+const CACHE_NAME = 'cotripar-pwa-v2.7';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

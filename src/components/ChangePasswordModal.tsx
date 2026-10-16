@@ -62,39 +62,24 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      // 1. Verify current password in Supabase
-      const { data, error } = await supabase
-        .from('app_usuarios')
-        .select('id, password_hash')
-        .eq('id', currentUser.id)
-        .single();
+      const { data: success, error } = await supabase.rpc('app_change_password', {
+        p_user_id: currentUser.id,
+        p_old_password: currentPassword.trim(),
+        p_new_password: newPassword.trim()
+      });
 
-      if (error || !data) {
-        setErrorMsg('Error al consultar el servidor.');
-        setIsSubmitting(false);
-        return;
-      }
-
-      if (data.password_hash !== currentPassword.trim()) {
-        setErrorMsg('La contraseña actual ingresada es incorrecta.');
-        setIsSubmitting(false);
-        return;
-      }
-
-      // 2. Update password in Supabase
-      const { error: updateError } = await supabase
-        .from('app_usuarios')
-        .update({ password_hash: newPassword.trim() })
-        .eq('id', currentUser.id);
-
-      if (updateError) {
+      if (error) {
         setErrorMsg('Error al actualizar la contraseña en el servidor.');
         setIsSubmitting(false);
         return;
       }
 
-      showToast('Contraseña actualizada con éxito');
-      handleClose();
+      if (success === true) {
+        showToast('Contraseña actualizada con éxito');
+        handleClose();
+      } else {
+        setErrorMsg('La contraseña actual no es correcta');
+      }
     } catch {
       setErrorMsg('Error de red al actualizar contraseña.');
     } finally {
