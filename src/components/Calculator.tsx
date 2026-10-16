@@ -942,28 +942,23 @@ export const Calculator: React.FC<CalculatorProps> = ({
       doc.save(`Cotripar_Comparativo_${safeName}_${safeRuc}.pdf`);
 
       // Persistir Comparativo en el Historial (Supabase)
-      const cantidadCuotasBanco = Math.max(
-        1,
-        Math.round(
-          escenarioBancario.frecuencia === 'semestral'
-            ? escenarioBancario.plazoAnios * 2
-            : escenarioBancario.plazoAnios
-        )
-      );
-
-      const cleanComparativoPayload = {
+      const payloadComparativo: SimulacionPDF = {
         usuario_id: currentUser?.id || null,
         vendedor_nombre: currentUser?.nombre || 'Asesor Cotripar',
         cliente_nombre: clienteFinal,
         cliente_ruc: rucFinal,
         maquina_implemento: maquinaFinal,
-        capital_usd: Number(escenarioBancario.capital) || 0,
-        gasto_admin_usd: Number(escenarioBancario.gastoAdmin) || 0,
-        banco_entidad: `Comparativo: ${compareBancoNombre} vs. Cotripar`,
-        tasa_anual: Number(escenarioBancario.tasaAnual) || 0,
-        plazo_anios: Number(escenarioBancario.plazoAnios) || 1,
-        periodicidad: escenarioBancario.frecuencia || 'semestral',
-        modalidad_semestral: escenarioBancario.modalidadSemestral || '',
+        capital_usd: Number(escenarioBancario.capital || capitalActivo) || 0,
+        gasto_admin_usd: 0,
+        banco_entidad: compareBancoNombre + ' vs. Financiación Cotripar',
+        tasa_anual:
+          Number(
+            compareBancoObj?.tasas_por_plazo?.[String(comparePlazoAnios)] ??
+              compareBancoObj?.tasa_anual ??
+              compareTasaBancaria
+          ) || 0,
+        plazo_anios: Number(comparePlazoAnios || plazoAnios) || 1,
+        periodicidad: 'Comparativo Dual',
         total_intereses_usd: Number(escenarioBancario.totalIntereses) || 0,
         total_iva_usd: Number(escenarioBancario.totalIva) || 0,
         costo_financiero_total_usd: Number(escenarioBancario.costoFinancieroTotal) || 0,
@@ -971,15 +966,13 @@ export const Calculator: React.FC<CalculatorProps> = ({
         mayor_cuota_anio1_usd: Number(escenarioBancario.cuotaMayorAnio1) || 0,
         cronograma_json: escenarioBancario.cronograma || [],
         items_json: items || [],
-        anticipo_usd: Number(anticipoBancario) || 0,
-        tipo_financiacion: 'COMPARATIVO',
+        anticipo_usd: Number(anticipoActivo) || 0,
+        tipo_financiacion: 'COMPARATIVO' as any,
         marca_producto: marcaProductoPrincipal,
-        mes_colocacion: infoBloqueActivo.mesNombre || '',
-        fecha_tope_vencimiento: infoBloqueActivo.fechaTopeVencimiento || '',
-        plazo_meses: Math.max(1, Math.round(plazoDetectadoMeses) || 12),
-        fechas_cuotas: fechasCuotas || [],
-        fecha_ultima_cuota: fechaISOToDDMMYYYY(ultimaFechaCuotaISO) || '',
-        cantidad_cuotas: cantidadCuotasBanco,
+        cantidad_cuotas: 2,
+        fechas_cuotas: [],
+        fecha_ultima_cuota: '',
+        modalidad_semestral: '',
         comparativo_json: {
           ...datosComparativo,
           compareBancoId: compareBancoId || selectedBancoId,
@@ -998,7 +991,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
       const { error: insertError } = await supabase
         .from('simulaciones_pdf')
-        .insert([cleanComparativoPayload]);
+        .insert([payloadComparativo]);
 
       if (insertError) {
         console.error('Error al guardar comparativo en Supabase:', insertError);

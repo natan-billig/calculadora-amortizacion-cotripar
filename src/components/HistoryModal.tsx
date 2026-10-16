@@ -71,6 +71,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   const [selectedAnio, setSelectedAnio] = useState<number>(new Date().getFullYear());
   const [selectedMes, setSelectedMes] = useState<number>(new Date().getMonth());
   const [selectedSemestre, setSelectedSemestre] = useState<1 | 2>(new Date().getMonth() < 6 ? 1 : 2);
+  const [selectedTipoFinanciacion, setSelectedTipoFinanciacion] = useState<string>('todos');
   const [selectedAsesor, setSelectedAsesor] = useState<string>('todos');
   const [selectedBanco, setSelectedBanco] = useState<string>('todos');
   const [selectedMarca, setSelectedMarca] = useState<string>('todas');
@@ -193,6 +194,13 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         if (sem !== selectedSemestre) return false;
       }
 
+      // Tipo de Financiación filter
+      if (selectedTipoFinanciacion !== 'todos') {
+        if (selectedTipoFinanciacion === 'COMPARATIVO' && !isComparativoSim(sim)) return false;
+        if (selectedTipoFinanciacion === 'F_COTRIPAR' && !isCotriparSim(sim)) return false;
+        if (selectedTipoFinanciacion === 'BANCARIA' && (isComparativoSim(sim) || isCotriparSim(sim))) return false;
+      }
+
       // Asesor filter
       if (selectedAsesor !== 'todos' && sim.vendedor_nombre !== selectedAsesor) {
         return false;
@@ -234,6 +242,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     selectedAnio,
     selectedMes,
     selectedSemestre,
+    selectedTipoFinanciacion,
     selectedAsesor,
     selectedBanco,
     selectedMarca,
@@ -810,6 +819,24 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
             </div>
           )}
 
+          {/* Tipo de Financiación Selector */}
+          <div>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1 flex items-center gap-1">
+              <Building2 className="w-3 h-3 text-cotripar-700" />
+              <span>Tipo de Financiación</span>
+            </label>
+            <select
+              value={selectedTipoFinanciacion}
+              onChange={(e) => setSelectedTipoFinanciacion(e.target.value)}
+              className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+            >
+              <option value="todos">Todos los Tipos</option>
+              <option value="BANCARIA">Financiación Bancaria</option>
+              <option value="F_COTRIPAR">Financiación Cotripar</option>
+              <option value="COMPARATIVO">Comparativo Banco vs. Cotripar</option>
+            </select>
+          </div>
+
           {/* Advisor Selector */}
           <div>
             <label className="text-[11px] font-bold text-slate-600 block mb-1 flex items-center gap-1">
@@ -1154,10 +1181,15 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       <td className="py-3 px-3 whitespace-nowrap">
                         {isComparativoSim(sim) ? (
                           <div>
-                            <span className="inline-flex items-center gap-1 font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
-                              🔄 {normalizeBancoNombre(sim)}
-                            </span>
-                            <span className="text-[10px] text-slate-500 block mt-0.5 font-semibold">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="inline-flex items-center gap-1 font-extrabold text-indigo-800 bg-indigo-100 border border-indigo-300 px-2 py-0.5 rounded-md text-[11px] shadow-xs">
+                                🔄 Comparativo
+                              </span>
+                              <span className="font-semibold text-slate-800 text-[11px]">
+                                {sim.banco_entidad}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-indigo-700 block mt-0.5 font-semibold">
                               Banco: {formatPercent(sim.tasa_anual)} vs. Cotripar:{' '}
                               {Number(sim.comparativo_json?.resultadoCotripar?.tasaMensual ?? 0.80).toFixed(2)}% m.
                             </span>
