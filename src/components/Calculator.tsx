@@ -2509,25 +2509,27 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
             {/* Botones en el Pie del Modal */}
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-end gap-2.5 shrink-0">
-              <button
-                type="button"
-                onClick={handleEmitirCartaOfertaBanco}
-                disabled={isGeneratingOffer}
-                className="w-full sm:w-auto py-2.5 px-5 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-2 transition-all border border-slate-700 disabled:opacity-50"
-                title={`Emitir Carta de Oferta Comercial oficial a nombre de ${compareBancoNombre}`}
-              >
-                {isGeneratingOffer ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-                    <span>Generando Carta Oferta...</span>
-                  </>
-                ) : (
-                  <>
-                    <FileSignature className="w-4 h-4 text-amber-400" />
-                    <span>📝 Emitir Carta Oferta ({compareBancoNombre})</span>
-                  </>
-                )}
-              </button>
+              {tipoFinanciacion === 'BANCARIA' && (currentUser?.rol === 'admin' || currentUser?.rol === 'coordinador') && (
+                <button
+                  type="button"
+                  onClick={handleEmitirCartaOfertaBanco}
+                  disabled={isGeneratingOffer}
+                  className="w-full sm:w-auto py-2.5 px-5 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-2 transition-all border border-slate-700 disabled:opacity-50"
+                  title={`Emitir Carta de Oferta Comercial oficial a nombre de ${compareBancoNombre}`}
+                >
+                  {isGeneratingOffer ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                      <span>Generando Carta Oferta...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileSignature className="w-4 h-4 text-amber-400" />
+                      <span>📝 Emitir Carta Oferta ({compareBancoNombre})</span>
+                    </>
+                  )}
+                </button>
+              )}
 
               <button
                 type="button"
