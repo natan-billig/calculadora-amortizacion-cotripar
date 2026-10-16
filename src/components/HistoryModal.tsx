@@ -673,12 +673,18 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       const fechaEmision = `${dateObj.getDate()} de ${mesesNombres[dateObj.getMonth()]} de ${dateObj.getFullYear()}`;
 
       const isComparativo = isComparativoSim(offerModalSim);
-      const bancoNombreFinal = offerFormData.bancoEntidad ||
+      let bancoNombreFinal = offerFormData.bancoEntidad?.trim() ||
         (isComparativo
           ? (offerModalSim.comparativo_json?.bancoComparado ||
              offerModalSim.comparativo_json?.bancoNombre ||
              (offerModalSim.banco_entidad || '').replace(' vs. Financiación Cotripar', '').trim())
-          : offerModalSim.banco_entidad) || 'Banco Oficial';
+          : offerModalSim.banco_entidad?.trim()) || '';
+
+      if (!bancoNombreFinal || bancoNombreFinal.toUpperCase().includes('COTRIPAR')) {
+        showToast('Error: La Carta de Oferta Comercial solo puede emitirse para entidades bancarias válidas.');
+        setIsGeneratingOffer(false);
+        return;
+      }
 
       const payload: CartaOfertaPayload = {
         numeroOferta: offerFormData.numeroOferta || `OF-${dateObj.getFullYear()}-001`,
@@ -1319,14 +1325,25 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                         <div className="flex items-center justify-center gap-1.5">
                           {isComparativoSim(sim) ? (
                             <>
-                              {/* Fila Comparativa: Solo 1 botón de descarga (Balanza), Cargar y Eliminar. Sin Carta Oferta */}
+                              {/* Fila Comparativa: Ver/Descargar Comparativo, Carta Oferta para el Banco Comparado, Cargar y Eliminar */}
                               <button
                                 onClick={() => handleDownloadComparativoPDF(sim)}
                                 className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition-colors"
-                                title="Descargar Comparativo PDF"
+                                title="Ver / Descargar Comparativo PDF"
                               >
                                 <Scale className="w-4 h-4" />
                               </button>
+
+                              {(currentUser?.rol === 'admin' || currentUser?.rol === 'coordinador') && (
+                                <button
+                                  onClick={() => handleOpenOfferLetterModal(sim)}
+                                  className="px-2.5 py-1 text-cotripar-700 hover:text-white hover:bg-cotripar-700 bg-cotripar-50 border border-cotripar-200 rounded-lg transition-all duration-150 flex items-center gap-1 font-bold text-xs shadow-xs"
+                                  title={`Generar Carta de Oferta Comercial para ${sim.comparativo_json?.bancoComparado || (sim.banco_entidad || '').replace(' vs. Financiación Cotripar', '').trim() || 'el Banco'}`}
+                                >
+                                  <FileSignature className="w-3.5 h-3.5" />
+                                  <span>Carta Oferta</span>
+                                </button>
+                              )}
 
                               <button
                                 onClick={() => onLoadSimulation(sim)}
@@ -1349,8 +1366,8 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                             </>
                           ) : (
                             <>
-                              {/* Filas habituales: Cotripar o Banco */}
-                              {isBancoSim(sim) && (currentUser?.rol === 'admin' || currentUser?.rol === 'coordinador') && (
+                              {/* Filas habituales: Cotripar o Banco. Carta Oferta NUNCA para Financiación Cotripar */}
+                              {!isCotriparSim(sim) && (currentUser?.rol === 'admin' || currentUser?.rol === 'coordinador') && (
                                 <button
                                   onClick={() => handleOpenOfferLetterModal(sim)}
                                   className="px-2.5 py-1 text-cotripar-700 hover:text-white hover:bg-cotripar-700 bg-cotripar-50 border border-cotripar-200 rounded-lg transition-all duration-150 flex items-center gap-1 font-bold text-xs shadow-xs"
@@ -1365,7 +1382,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                                 <button
                                   onClick={() => handleDownloadComparativoPDF(sim)}
                                   className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition-colors"
-                                  title="Descargar Reporte Comparativo (Banco vs. Cotripar)"
+                                  title="Ver / Descargar Comparativo PDF"
                                 >
                                   <Scale className="w-4 h-4" />
                                 </button>
@@ -1725,31 +1742,34 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                   <div>
                     <span className="font-bold text-slate-800">Condiciones de Crédito Referenciales Vinculadas:</span>
                     <p className="text-slate-500 text-[11px]">
-                      {isCotriparSim(offerModalSim) ? (
+                      {isComparativoSim(offerModalSim) ? (
                         <>
-                          Plazo:{' '}
+                          Banco:{' '}
                           <strong>
-                            {offerModalSim.plazo_meses || 17} meses (
-                            {offerModalSim.fechas_cuotas?.length || offerModalSim.cantidad_cuotas || 2}{' '}
-                            {(offerModalSim.fechas_cuotas?.length || offerModalSim.cantidad_cuotas || 2) === 1
-                              ? 'cuota'
-                              : 'cuotas'}
-                            )
+                            {offerModalSim.comparativo_json?.bancoComparado ||
+                              (offerModalSim.banco_entidad || '').replace(' vs. Financiación Cotripar', '').trim()}
                           </strong>{' '}
-                          ({offerModalSim.periodicidad} {offerModalSim.modalidad_semestral || ''}) • Tasa:{' '}
+                          • Plazo:{' '}
                           <strong>
-                            {(offerModalSim.tasa_anual > 2
-                              ? offerModalSim.tasa_anual / 12
-                              : offerModalSim.tasa_anual
-                            ).toFixed(2)}
-                            % mes ({formatPercent(offerModalSim.tasa_anual)} anual)
+                            {offerModalSim.comparativo_json?.plazoAniosBanco
+                              ? `${offerModalSim.comparativo_json.plazoAniosBanco} años`
+                              : `${offerModalSim.plazo_anios} años`}
                           </strong>{' '}
-                          • Cuota Referencial:{' '}
-                          <strong>{formatUSD(offerModalSim.mayor_cuota_anio1_usd)}</strong>
+                          • Tasa:{' '}
+                          <strong>
+                            {formatPercent(offerModalSim.comparativo_json?.tasaAnualBanco || offerModalSim.tasa_anual)}
+                          </strong>{' '}
+                          • Cuota Semestral:{' '}
+                          <strong>
+                            {formatUSD(
+                              offerModalSim.comparativo_json?.resultadoBanco?.cuotaMayorAnio1 ??
+                                offerModalSim.mayor_cuota_anio1_usd
+                            )}
+                          </strong>
                         </>
                       ) : (
                         <>
-                          Plazo:{' '}
+                          Banco: <strong>{offerModalSim.banco_entidad}</strong> • Plazo:{' '}
                           <strong>
                             {Math.abs(Number(offerModalSim.plazo_anios) - 1.5) < 0.05
                               ? '18 meses'

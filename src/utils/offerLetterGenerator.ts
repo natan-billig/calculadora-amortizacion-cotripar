@@ -130,7 +130,11 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   const pageHeight = doc.internal.pageSize.getHeight(); // 297mm
   const marginX = 14;
   const contentWidth = pageWidth - marginX * 2; // 182mm
-  const isCotripar = data.tipoFinanciacion === 'F_COTRIPAR' || (data.bancoEntidad || '').toUpperCase().includes('COTRIPAR');
+
+  const bancoEntidadLimpio = (data.bancoEntidad || '').trim();
+  if (!bancoEntidadLimpio || bancoEntidadLimpio.toUpperCase().includes('COTRIPAR')) {
+    throw new Error('La Carta de Oferta Comercial solo puede ser emitida para una entidad bancaria válida (no aplicable a Cotripar).');
+  }
 
   // 1. CABEÇALHO INSTITUCIONAL SUPERIOR (TOPO DA PÁGINA A4)
   // Faixa Superior Vermelha Cotripar (#C8102E -> RGB: 200, 16, 46)
@@ -507,7 +511,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setTextColor(71, 85, 105);
   const entLines = [
     `• Validez: 20 días calendario (Vence: ${fechaVencimiento}).`,
-    `• Entrega sujeta a aprobación crediticia y desembolso por parte de la entidad financiera (${isCotripar ? 'Cotripar S.A.' : (data.bancoEntidad || 'el Banco')}).`,
+    `• Entrega sujeta a aprobación crediticia y desembolso por parte de la entidad financiera (${data.bancoEntidad || 'el Banco'}).`,
     '• Lugar de entrega: Puesto en estancia / establecimiento del cliente según acuerdo comercial.'
   ];
   let entY = currentY + 8.8;
