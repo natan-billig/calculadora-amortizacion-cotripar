@@ -726,92 +726,69 @@ export const Calculator: React.FC<CalculatorProps> = ({
     const desembolsoTotalCotripar = anticipoCotripar + escenarioCotripar.totalPagado;
     const diferenciaDesembolsoLiquida = desembolsoTotalCotripar - desembolsoTotalBanco;
 
-    const ahorroCFT = escenarioCotripar.costoFinancieroTotal - escenarioBancario.costoFinancieroTotal;
     const diffTasaAnual = Math.max(0, escenarioCotripar.tasaAnual - escenarioBancario.tasaAnual);
-    const ahorroCuotaAnio1 = escenarioCotripar.cuotaMayorAnio1 - escenarioBancario.cuotaMayorAnio1;
+    const esPlazoExtendido = comparePlazoAnios >= 2;
 
-    const notaCapitales =
-      anticipoBancario !== anticipoCotripar
-        ? ` (evaluando un capital bancario de ${formatUSD(capitalBancario)} con entrega inicial de ${formatUSD(
-            anticipoBancario
-          )} vs. capital Cotripar de ${formatUSD(capitalCotripar)} con entrega inicial de ${formatUSD(anticipoCotripar)})`
-        : '';
+    if (!esPlazoExtendido) {
+      // Cenário A: Plazo Equivalente (1 o 1.5 años / 12 a 18 meses)
+      // Ambas modalidades en la misma ventana de tiempo: Foco en ECONOMÍA PURA DE INTERESES / CFT
+      const ahorroReal = escenarioCotripar.costoFinancieroTotal - escenarioBancario.costoFinancieroTotal;
+      const mesesTxt = comparePlazoAnios === 1 ? '12' : '18';
 
-    if (diferenciaDesembolsoLiquida > 0) {
       return {
-        esAhorroDirecto: true,
+        esPlazoExtendido: false,
         desembolsoTotalBanco,
         desembolsoTotalCotripar,
         diferenciaDesembolsoLiquida,
-        ahorroPrincipalUSD: diferenciaDesembolsoLiquida,
-        diferenciaTasa: diffTasaAnual,
-        textoResumen: `💡 Venta Conveniente por Banco: Considerando los capitales y anticipos configurados${notaCapitales}, operar a través de ${compareBancoNombre} representa un Desembolso Total de ${formatUSD(
-          desembolsoTotalBanco
-        )} frente a ${formatUSD(
-          desembolsoTotalCotripar
-        )} en Financiación Cotripar, generando un ahorro financiero líquido de ${formatUSD(
-          diferenciaDesembolsoLiquida
-        )} para el productor gracias a la tasa preferencial bancaria (${formatPercent(
+        ahorroReal,
+        badgeTexto: `Ahorro Financiero en Banco: ${formatUSD(ahorroReal)}`,
+        tercerCardTitulo: 'DIFERENCIA FINANCIERA',
+        tercerCardValor: formatUSD(ahorroReal),
+        tercerCardSubtitulo: 'Menor costo en Banco',
+        textoResumen: `Financiar a través de ${compareBancoNombre} a ${mesesTxt} meses representa un ahorro directo de ${formatUSD(
+          ahorroReal
+        )} en costos financieros frente al crédito de Cotripar, gracias a una tasa preferencial de ${formatPercent(
           escenarioBancario.tasaAnual
-        )} anual vs. ${formatPercent(escenarioCotripar.tasaAnual)} nominal anual en Cotripar).`
+        )} anual frente al ${formatPercent(escenarioCotripar.tasaAnual)} nominal anual de Cotripar.`
+      };
+    } else {
+      // Cenário B: Plazo Bancario Extendido (>= 2 años)
+      // Plazo bancario sustancialmente mayor al tope de Cotripar (18m). Foco en ALIVIO DE FLUJO DE CAJA Y TASA PREFERENCIAL
+      const alivioCuota = escenarioCotripar.cuotaMayorAnio1 - escenarioBancario.cuotaMayorAnio1;
+      const porcentajeAlivio =
+        escenarioCotripar.cuotaMayorAnio1 > 0
+          ? Math.round((alivioCuota / escenarioCotripar.cuotaMayorAnio1) * 100)
+          : 0;
+
+      return {
+        esPlazoExtendido: true,
+        desembolsoTotalBanco,
+        desembolsoTotalCotripar,
+        diferenciaDesembolsoLiquida,
+        alivioCuota,
+        porcentajeAlivio,
+        badgeTexto: `Alivio de Cuota: ${formatUSD(alivioCuota)} / cuota (-${porcentajeAlivio}%)`,
+        tercerCardTitulo: 'ALIVIO EN FLUJO DE CAJA (BANCO)',
+        tercerCardValor: formatUSD(alivioCuota),
+        tercerCardSubtitulo: `Cuota ${porcentajeAlivio}% menor por período en el Banco`,
+        textoResumen: `Financiar a través de ${compareBancoNombre} a ${comparePlazoAnios} años alivia sustancialmente el flujo operativo del productor, reduciendo la cuota en ${formatUSD(
+          alivioCuota
+        )} por período (-${porcentajeAlivio}%) frente a la concentración de pagos en Cotripar (${formatUSD(
+          escenarioCotripar.cuotaMayorAnio1
+        )}). Además, accede a una tasa preferencial de ${formatPercent(
+          escenarioBancario.tasaAnual
+        )} anual (${formatPercent(diffTasaAnual)} menor que la tasa de Cotripar de ${formatPercent(
+          escenarioCotripar.tasaAnual
+        )}).`
       };
     }
-
-    // Si el plazo bancario seleccionado es más largo o el anticipo difiere
-    const plazoEquiv = plazoDetectadoMeses <= 12 ? 1 : 1.5;
-    const tasaEquiv = getTasaPorPlazo(compareBancoObj, plazoEquiv) ?? compareTasaBancaria;
-    const bancoPlazoEquiv = calcularSistemaAleman(
-      capitalBancario,
-      tasaEquiv,
-      plazoEquiv,
-      'semestral',
-      'constante',
-      compareBancoNombre
-    );
-    const ahorroEnPlazoEquiv = Math.max(0, escenarioCotripar.costoFinancieroTotal - bancoPlazoEquiv.costoFinancieroTotal);
-
-    return {
-      esAhorroDirecto: ahorroCFT > 0,
-      desembolsoTotalBanco,
-      desembolsoTotalCotripar,
-      diferenciaDesembolsoLiquida,
-      ahorroPrincipalUSD:
-        ahorroCFT > 0 ? ahorroCFT : ahorroEnPlazoEquiv > 0 ? ahorroEnPlazoEquiv : Math.max(0, ahorroCuotaAnio1),
-      diferenciaTasa: diffTasaAnual,
-      textoResumen:
-        diferenciaDesembolsoLiquida < 0
-          ? `💡 Análisis de Desembolso Total${notaCapitales}: El Desembolso Total en Financiación Cotripar es de ${formatUSD(
-              desembolsoTotalCotripar
-            )} frente a ${formatUSD(
-              desembolsoTotalBanco
-            )} en ${compareBancoNombre} (diferencia líquida de ${formatUSD(
-              Math.abs(diferenciaDesembolsoLiquida)
-            )}). No obstante, ${compareBancoNombre} ofrece una tasa preferencial de ${formatPercent(
-              escenarioBancario.tasaAnual
-            )} anual (${formatPercent(diffTasaAnual)} menor que el ${formatPercent(
-              escenarioCotripar.tasaAnual
-            )} nominal anual de Cotripar)${
-              ahorroCuotaAnio1 > 0
-                ? ` y alivia el flujo de caja reduciendo la mayor cuota del primer año en ${formatUSD(ahorroCuotaAnio1)}.`
-                : '.'
-            }`
-          : `💡 Venta Conveniente por Banco: Financiar a través de ${compareBancoNombre} permite acceder a una tasa preferencial de ${formatPercent(
-              escenarioBancario.tasaAnual
-            )} anual frente al ${formatPercent(escenarioCotripar.tasaAnual)} nominal anual (${(
-              escenarioCotripar.tasaMensual || 0.8
-            ).toFixed(2)}% mensual) del crédito directo de Cotripar.`
-    };
   }, [
     anticipoBancario,
     anticipoCotripar,
-    capitalBancario,
-    capitalCotripar,
     escenarioCotripar,
     escenarioBancario,
     compareBancoNombre,
-    plazoDetectadoMeses,
-    compareBancoObj,
-    compareTasaBancaria
+    comparePlazoAnios
   ]);
 
   const capitalPresets = [25000, 50000, 75000, 110000, 150000, 200000];
@@ -985,7 +962,9 @@ export const Calculator: React.FC<CalculatorProps> = ({
           desembolsoTotalBanco: conclusionComparativa.desembolsoTotalBanco,
           desembolsoTotalCotripar: conclusionComparativa.desembolsoTotalCotripar,
           diferenciaDesembolsoLiquida: conclusionComparativa.diferenciaDesembolsoLiquida,
-          ahorroPrincipalUSD: conclusionComparativa.ahorroPrincipalUSD
+          ahorroPrincipalUSD: conclusionComparativa.esPlazoExtendido
+            ? conclusionComparativa.alivioCuota
+            : conclusionComparativa.ahorroReal
         }
       };
 
@@ -2360,9 +2339,9 @@ export const Calculator: React.FC<CalculatorProps> = ({
                       Conclusión y Recomendación Comercial al Productor
                     </h4>
                   </div>
-                  {conclusionComparativa.ahorroPrincipalUSD > 0 && (
+                  {conclusionComparativa.badgeTexto && (
                     <span className="text-xs font-black px-3 py-1 rounded-full bg-emerald-700 text-white shadow-xs">
-                      Ahorro / Ventaja: {formatUSD(conclusionComparativa.ahorroPrincipalUSD)}
+                      {conclusionComparativa.badgeTexto}
                     </span>
                   )}
                 </div>
@@ -2395,15 +2374,13 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
                   <div className="p-2.5 rounded-xl bg-emerald-700 text-white flex flex-col justify-center">
                     <span className="text-[10px] font-bold uppercase text-emerald-100">
-                      Diferencia Financiera Líquida
+                      {conclusionComparativa.tercerCardTitulo}
                     </span>
                     <span className="text-xs sm:text-sm font-black">
-                      {formatUSD(Math.abs(conclusionComparativa.diferenciaDesembolsoLiquida))}
+                      {conclusionComparativa.tercerCardValor}
                     </span>
                     <span className="text-[10px] text-emerald-100">
-                      {conclusionComparativa.diferenciaDesembolsoLiquida >= 0
-                        ? `A favor de ${compareBancoNombre}`
-                        : 'Menor desembolso en Cotripar'}
+                      {conclusionComparativa.tercerCardSubtitulo}
                     </span>
                   </div>
                 </div>

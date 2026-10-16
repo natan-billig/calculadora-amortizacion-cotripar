@@ -486,7 +486,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
     ? [
         `• Entidad Financiera: Financiación Cotripar`,
         `• Capital a Financiar: ${formatUSD(totalAFinanciar)}${anticipo > 0 ? ' (Neto de Anticipo)' : ''}`,
-        `• Plazo y Periodicidad: ${data.plazoMeses || Math.round(data.plazoAnios * 12)} Meses (${cantCuotas} ${cantCuotas === 1 ? 'cuota programada' : 'cuotas programadas'} - ${freqTexto})`,
+        `• Plazo y Periodicidad: ${data.plazoMeses || 18} Meses (${cantCuotas} ${cantCuotas === 1 ? 'cuota programada' : 'cuotas programadas'} - ${freqTexto})`,
         `• Cuota Referencial: ${formatUSD(data.mayorCuotaAnio1USD)} (Última cuota: ${data.fechaUltimaCuota || data.fechaTopeVencimiento || '20/03/2028'})`
       ]
     : [

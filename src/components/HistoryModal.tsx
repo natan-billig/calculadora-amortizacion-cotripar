@@ -668,7 +668,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         tipoFinanciacion: isCotripar ? 'F_COTRIPAR' : offerModalSim.tipo_financiacion,
         mesColocacion: offerModalSim.mes_colocacion,
         fechaTopeVencimiento: offerModalSim.fecha_tope_vencimiento,
-        plazoMeses: offerModalSim.plazo_meses,
+        plazoMeses: isCotripar ? (offerModalSim.plazo_meses || 17) : offerModalSim.plazo_meses,
         tasaMensual: isCotripar
           ? (offerModalSim.tasa_anual > 2 ? offerModalSim.tasa_anual / 12 : offerModalSim.tasa_anual)
           : undefined,
@@ -1621,7 +1621,43 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                   <div>
                     <span className="font-bold text-slate-800">Condiciones de Crédito Referenciales Vinculadas:</span>
                     <p className="text-slate-500 text-[11px]">
-                      Plazo: <strong>{Math.abs(Number(offerModalSim.plazo_anios) - 1.5) < 0.05 ? '18 meses' : `${offerModalSim.plazo_anios} ${Number(offerModalSim.plazo_anios) === 1 ? 'año' : 'años'}`}</strong> ({offerModalSim.periodicidad} {offerModalSim.modalidad_semestral || ''}) • Tasa: <strong>{formatPercent(offerModalSim.tasa_anual)}</strong> • Mayor Cuota Año 1: <strong>{formatUSD(offerModalSim.mayor_cuota_anio1_usd)}</strong>
+                      {isCotriparSim(offerModalSim) ? (
+                        <>
+                          Plazo:{' '}
+                          <strong>
+                            {offerModalSim.plazo_meses || 17} meses (
+                            {offerModalSim.fechas_cuotas?.length || offerModalSim.cantidad_cuotas || 2}{' '}
+                            {(offerModalSim.fechas_cuotas?.length || offerModalSim.cantidad_cuotas || 2) === 1
+                              ? 'cuota'
+                              : 'cuotas'}
+                            )
+                          </strong>{' '}
+                          ({offerModalSim.periodicidad} {offerModalSim.modalidad_semestral || ''}) • Tasa:{' '}
+                          <strong>
+                            {(offerModalSim.tasa_anual > 2
+                              ? offerModalSim.tasa_anual / 12
+                              : offerModalSim.tasa_anual
+                            ).toFixed(2)}
+                            % mes ({formatPercent(offerModalSim.tasa_anual)} anual)
+                          </strong>{' '}
+                          • Cuota Referencial:{' '}
+                          <strong>{formatUSD(offerModalSim.mayor_cuota_anio1_usd)}</strong>
+                        </>
+                      ) : (
+                        <>
+                          Plazo:{' '}
+                          <strong>
+                            {Math.abs(Number(offerModalSim.plazo_anios) - 1.5) < 0.05
+                              ? '18 meses'
+                              : `${offerModalSim.plazo_anios} ${
+                                  Number(offerModalSim.plazo_anios) === 1 ? 'año' : 'años'
+                                }`}
+                          </strong>{' '}
+                          ({offerModalSim.periodicidad} {offerModalSim.modalidad_semestral || ''}) • Tasa:{' '}
+                          <strong>{formatPercent(offerModalSim.tasa_anual)}</strong> • Mayor Cuota Año 1:{' '}
+                          <strong>{formatUSD(offerModalSim.mayor_cuota_anio1_usd)}</strong>
+                        </>
+                      )}
                     </p>
                   </div>
                 </div>

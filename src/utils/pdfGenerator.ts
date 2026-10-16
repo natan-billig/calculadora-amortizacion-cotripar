@@ -759,6 +759,10 @@ export async function generarPDFComparativo(datos: DatosReporteComparativo): Pro
   const desembolsoTotalBanco = anticipoBanco + rb.totalPagado;
   const desembolsoTotalCotripar = anticipoCotripar + rc.totalPagado;
 
+  const esPlazoExtendido = rb.plazoAnios >= 2;
+  const alivioCuota = rc.cuotaMayorAnio1 - rb.cuotaMayorAnio1;
+  const porcentajeAlivio = rc.cuotaMayorAnio1 > 0 ? Math.round((alivioCuota / rc.cuotaMayorAnio1) * 100) : 0;
+
   const diffIntereses = rc.totalIntereses - rb.totalIntereses;
   const diffIva = rc.totalIva - rb.totalIva;
   const diffCFT = rc.costoFinancieroTotal - rb.costoFinancieroTotal;
@@ -802,19 +806,31 @@ export async function generarPDFComparativo(datos: DatosReporteComparativo): Pro
       '$ 0 (0% Exento)',
       rb.gastoAdmin > 0 ? `+${formatUSD(rb.gastoAdmin)} en Banco` : '$ 0'
     ],
-    ['Total Intereses Proyectados', formatUSD(rb.totalIntereses), formatUSD(rc.totalIntereses), formatDiff(diffIntereses)],
-    ['Total IVA s/ Intereses (10%)', formatUSD(rb.totalIva), formatUSD(rc.totalIva), formatDiff(diffIva)],
-    ['Encargos Financieros (CFT)', formatUSD(rb.costoFinancieroTotal), formatUSD(rc.costoFinancieroTotal), formatDiff(diffCFT)],
+    ['Total Intereses Proyectados', formatUSD(rb.totalIntereses), formatUSD(rc.totalIntereses), esPlazoExtendido ? 'Plazo Extendido (Banco)' : formatDiff(diffIntereses)],
+    ['Total IVA s/ Intereses (10%)', formatUSD(rb.totalIva), formatUSD(rc.totalIva), esPlazoExtendido ? 'Plazo Extendido (Banco)' : formatDiff(diffIva)],
+    ['Encargos Financieros (CFT)', formatUSD(rb.costoFinancieroTotal), formatUSD(rc.costoFinancieroTotal), esPlazoExtendido ? 'Plazo Extendido (Banco)' : formatDiff(diffCFT)],
     [
       'Cuota Año 1 / Cuota Máxima',
       `${formatUSD(rb.cuotaMayorAnio1)} (Mayor Año 1)`,
       `${formatUSD(rc.cuotaMayorAnio1)} (Prom: ${formatUSD(cuotaPromedioCotripar)})`,
-      rb.cuotaMayorAnio1 < rc.cuotaMayorAnio1
-        ? `${formatUSD(rc.cuotaMayorAnio1 - rb.cuotaMayorAnio1)} menor en Banco`
+      alivioCuota > 0
+        ? `Alivio Banco: ${formatUSD(alivioCuota)} (-${porcentajeAlivio}%)`
         : '-'
     ],
-    ['Total Financiado (Capital + CFT)', formatUSD(rb.totalPagado), formatUSD(rc.totalPagado), formatDiff(diffTotalFinanciado)],
-    ['DESEMBOLSO TOTAL (Entrega + Financiado)', formatUSD(desembolsoTotalBanco), formatUSD(desembolsoTotalCotripar), formatDiff(diffDesembolsoTotal)]
+    ['Total Financiado (Capital + CFT)', formatUSD(rb.totalPagado), formatUSD(rc.totalPagado), esPlazoExtendido ? 'Plazo Extendido (Banco)' : formatDiff(diffTotalFinanciado)],
+    esPlazoExtendido
+      ? [
+          'IMPACTO EN FLUJO DE CAJA',
+          `Cuota ${formatUSD(rb.cuotaMayorAnio1)} (${rb.plazoAnios} años)`,
+          `Cuota ${formatUSD(rc.cuotaMayorAnio1)} (18 meses)`,
+          `Alivio de ${formatUSD(alivioCuota)}/cuota (-${porcentajeAlivio}%)`
+        ]
+      : [
+          'DESEMBOLSO TOTAL (Entrega + Financiado)',
+          formatUSD(desembolsoTotalBanco),
+          formatUSD(desembolsoTotalCotripar),
+          formatDiff(diffDesembolsoTotal)
+        ]
   ];
 
   autoTable(doc, {
