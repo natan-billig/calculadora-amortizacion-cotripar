@@ -100,9 +100,9 @@ export const Calculator: React.FC<CalculatorProps> = ({
       precioUnitarioUSD: 110000
     }
   ]);
-  const [anticipoUSD, setAnticipoUSD] = useState<number>(0);
+  const [anticipoBancario, setAnticipoBancario] = useState<number>(0);
+  const [anticipoCotripar, setAnticipoCotripar] = useState<number>(0);
   const [validationTriggered, setValidationTriggered] = useState<boolean>(false);
-  const [capital, setCapital] = useState<number>(110000);
 
   // Traditional Banking Mode Inputs
   const [tasaAnual, setTasaAnual] = useState<number>(7.40);
@@ -411,8 +411,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
   // Handle re-loading simulation from history
   useEffect(() => {
     if (initialSimulation) {
+      const loadedAnticipo = Number(initialSimulation.anticipo_usd) || 0;
       if (initialSimulation.tipo_financiacion === 'F_COTRIPAR') {
         setTipoFinanciacion('F_COTRIPAR');
+        setAnticipoCotripar(loadedAnticipo);
         if (initialSimulation.mes_colocacion) {
           setMesColocacion(initialSimulation.mes_colocacion);
         }
@@ -442,6 +444,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
         }
       } else {
         setTipoFinanciacion('BANCARIA');
+        setAnticipoBancario(loadedAnticipo);
         setTasaAnual(initialSimulation.tasa_anual);
         setPlazoAnios(initialSimulation.plazo_anios);
         setFrecuencia(initialSimulation.periodicidad === 'semestral' ? 'semestral' : 'anual');
@@ -452,7 +455,6 @@ export const Calculator: React.FC<CalculatorProps> = ({
         if (bFound) setSelectedBancoId(bFound.id);
       }
 
-      setCapital(initialSimulation.capital_usd);
       setClienteNombre(initialSimulation.cliente_nombre || '');
       setClienteRuc(initialSimulation.cliente_ruc || '');
       if (initialSimulation.items_json && Array.isArray(initialSimulation.items_json) && initialSimulation.items_json.length > 0) {
@@ -464,11 +466,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
             marca: initialSimulation.marca_producto || 'Valtra',
             descripcion: initialSimulation.maquina_implemento || '',
             cantidad: 1,
-            precioUnitarioUSD: Number(initialSimulation.capital_usd) + (Number(initialSimulation.anticipo_usd) || 0)
+            precioUnitarioUSD: Number(initialSimulation.capital_usd) + loadedAnticipo
           }
         ]);
       }
-      setAnticipoUSD(Number(initialSimulation.anticipo_usd) || 0);
       showToast(`Simulación de "${initialSimulation.cliente_nombre}" cargada.`);
     }
   }, [initialSimulation]);
@@ -522,22 +523,43 @@ export const Calculator: React.FC<CalculatorProps> = ({
     return b ? b.entidad : 'Banco Comercial';
   }, [bancos, selectedBancoId]);
 
-  // Automatic capital calculation from items and anticipo
+  // Automatic independent capital calculation from items and each mode's anticipo
   const subtotalEquipos = useMemo(() => {
     return items.reduce((sum, it) => sum + (Number(it.cantidad) || 0) * (Number(it.precioUnitarioUSD) || 0), 0);
   }, [items]);
 
-  useEffect(() => {
-    const totalCalculado = Math.max(0, subtotalEquipos - (Number(anticipoUSD) || 0));
-    setCapital(totalCalculado);
-  }, [subtotalEquipos, anticipoUSD]);
+  const capitalBancario = useMemo(() => {
+    return Math.max(0, subtotalEquipos - (Number(anticipoBancario) || 0));
+  }, [subtotalEquipos, anticipoBancario]);
+
+  const capitalCotripar = useMemo(() => {
+    return Math.max(0, subtotalEquipos - (Number(anticipoCotripar) || 0));
+  }, [subtotalEquipos, anticipoCotripar]);
+
+  const anticipoActivo = tipoFinanciacion === 'F_COTRIPAR' ? anticipoCotripar : anticipoBancario;
+  const capitalActivo = tipoFinanciacion === 'F_COTRIPAR' ? capitalCotripar : capitalBancario;
+
+  const handleAnticipoActivoChange = (val: number) => {
+    const cleanVal = Math.max(0, val || 0);
+    if (tipoFinanciacion === 'F_COTRIPAR') {
+      setAnticipoCotripar(cleanVal);
+    } else {
+      setAnticipoBancario(cleanVal);
+    }
+  };
+
+  const handleCapitalManualChange = (val: number) => {
+    const cleanVal = Math.max(0, val || 0);
+    if (items.length === 1) {
+      handleItemChange(items[0].id, 'precioUnitarioUSD', cleanVal + (Number(anticipoActivo) || 0));
+    } else {
+      const nuevoAnticipo = Math.max(0, subtotalEquipos - cleanVal);
+      handleAnticipoActivoChange(nuevoAnticipo);
+    }
+  };
 
   const handleApplyPreset = (val: number) => {
-    if (items.length === 1) {
-      handleItemChange(items[0].id, 'precioUnitarioUSD', val + (Number(anticipoUSD) || 0));
-    } else {
-      setCapital(val);
-    }
+    handleCapitalManualChange(val);
   };
 
   const handleAddItem = () => {
@@ -569,24 +591,24 @@ export const Calculator: React.FC<CalculatorProps> = ({
     );
   };
 
-  // Real-time calculation
+  // Real-time calculation for active tab using its independent capital & anticipo
   const resultado: ResultadoAleman = useMemo(() => {
     if (tipoFinanciacion === 'F_COTRIPAR') {
       return calcularFCotripar(
-        capital,
+        capitalCotripar,
         mesColocacion,
         plazoDetectadoMeses,
         periodicidadCotripar,
         esquemaSemestralCotripar,
         undefined,
         items,
-        anticipoUSD,
+        anticipoCotripar,
         fechasCuotas,
         tasasCotriparConfig
       );
     }
     return calcularSistemaAleman(
-      capital,
+      capitalBancario,
       tasaAnual,
       plazoAnios,
       frecuencia,
@@ -595,7 +617,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
     );
   }, [
     tipoFinanciacion,
-    capital,
+    capitalBancario,
+    capitalCotripar,
     tasaAnual,
     plazoAnios,
     frecuencia,
@@ -606,7 +629,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
     periodicidadCotripar,
     esquemaSemestralCotripar,
     items,
-    anticipoUSD,
+    anticipoCotripar,
     fechasCuotas,
     tasasCotriparConfig
   ]);
@@ -630,65 +653,82 @@ export const Calculator: React.FC<CalculatorProps> = ({
     const freqBancaria: FrecuenciaPago =
       comparePlazoAnios === 1.5 ? 'semestral' : (fechasCuotas.length >= 2 ? 'semestral' : frecuencia);
     return calcularSistemaAleman(
-      capital,
+      capitalBancario,
       compareTasaBancaria,
       comparePlazoAnios,
       freqBancaria,
       compareEsquemaBancario,
       compareBancoNombre
     );
-  }, [capital, compareTasaBancaria, comparePlazoAnios, fechasCuotas.length, frecuencia, compareEsquemaBancario, compareBancoNombre]);
+  }, [capitalBancario, compareTasaBancaria, comparePlazoAnios, fechasCuotas.length, frecuencia, compareEsquemaBancario, compareBancoNombre]);
 
   const escenarioCotripar: ResultadoAleman = useMemo(() => {
     return calcularFCotripar(
-      capital,
+      capitalCotripar,
       mesColocacion,
       plazoDetectadoMeses,
       periodicidadCotripar,
       esquemaSemestralCotripar,
       undefined,
       items,
-      anticipoUSD,
+      anticipoCotripar,
       fechasCuotas,
       tasasCotriparConfig
     );
   }, [
-    capital,
+    capitalCotripar,
     mesColocacion,
     plazoDetectadoMeses,
     periodicidadCotripar,
     esquemaSemestralCotripar,
     items,
-    anticipoUSD,
+    anticipoCotripar,
     fechasCuotas,
     tasasCotriparConfig
   ]);
 
-  // Cálculo de conclusión comercial y ahorro
+  // Cálculo de conclusión comercial y desembolso total considerando anticipos independientes
   const conclusionComparativa = useMemo(() => {
+    const desembolsoTotalBanco = anticipoBancario + escenarioBancario.totalPagado;
+    const desembolsoTotalCotripar = anticipoCotripar + escenarioCotripar.totalPagado;
+    const diferenciaDesembolsoLiquida = desembolsoTotalCotripar - desembolsoTotalBanco;
+
     const ahorroCFT = escenarioCotripar.costoFinancieroTotal - escenarioBancario.costoFinancieroTotal;
-    const ahorroTotal = escenarioCotripar.totalPagado - escenarioBancario.totalPagado;
     const diffTasaAnual = Math.max(0, escenarioCotripar.tasaAnual - escenarioBancario.tasaAnual);
     const ahorroCuotaAnio1 = escenarioCotripar.cuotaMayorAnio1 - escenarioBancario.cuotaMayorAnio1;
 
-    if (ahorroCFT > 0) {
+    const notaCapitales =
+      anticipoBancario !== anticipoCotripar
+        ? ` (evaluando un capital bancario de ${formatUSD(capitalBancario)} con entrega inicial de ${formatUSD(
+            anticipoBancario
+          )} vs. capital Cotripar de ${formatUSD(capitalCotripar)} con entrega inicial de ${formatUSD(anticipoCotripar)})`
+        : '';
+
+    if (diferenciaDesembolsoLiquida > 0) {
       return {
         esAhorroDirecto: true,
-        ahorroPrincipalUSD: ahorroCFT,
+        desembolsoTotalBanco,
+        desembolsoTotalCotripar,
+        diferenciaDesembolsoLiquida,
+        ahorroPrincipalUSD: diferenciaDesembolsoLiquida,
         diferenciaTasa: diffTasaAnual,
-        textoResumen: `💡 Venta Conveniente por Banco: Financiar a través de ${compareBancoNombre} representa un ahorro de ${formatUSD(
-          ahorroCFT
-        )} en costos financieros totales en comparación con el crédito directo de Cotripar, debido a la tasa preferencial bancaria (${formatPercent(
+        textoResumen: `💡 Venta Conveniente por Banco: Considerando los capitales y anticipos configurados${notaCapitales}, operar a través de ${compareBancoNombre} representa un Desembolso Total de ${formatUSD(
+          desembolsoTotalBanco
+        )} frente a ${formatUSD(
+          desembolsoTotalCotripar
+        )} en Financiación Cotripar, generando un ahorro financiero líquido de ${formatUSD(
+          diferenciaDesembolsoLiquida
+        )} para el productor gracias a la tasa preferencial bancaria (${formatPercent(
           escenarioBancario.tasaAnual
         )} anual vs. ${formatPercent(escenarioCotripar.tasaAnual)} nominal anual en Cotripar).`
       };
     }
 
-    // Si el plazo bancario seleccionado es más largo (ej: 3 a 6 años), destacamos la menor tasa anual y el alivio en la cuota
+    // Si el plazo bancario seleccionado es más largo o el anticipo difiere
     const plazoEquiv = plazoDetectadoMeses <= 12 ? 1 : 1.5;
     const tasaEquiv = getTasaPorPlazo(compareBancoObj, plazoEquiv) ?? compareTasaBancaria;
     const bancoPlazoEquiv = calcularSistemaAleman(
-      capital,
+      capitalBancario,
       tasaEquiv,
       plazoEquiv,
       'semestral',
@@ -698,20 +738,28 @@ export const Calculator: React.FC<CalculatorProps> = ({
     const ahorroEnPlazoEquiv = Math.max(0, escenarioCotripar.costoFinancieroTotal - bancoPlazoEquiv.costoFinancieroTotal);
 
     return {
-      esAhorroDirecto: ahorroTotal > 0,
-      ahorroPrincipalUSD: ahorroEnPlazoEquiv > 0 ? ahorroEnPlazoEquiv : Math.max(0, ahorroCuotaAnio1),
+      esAhorroDirecto: ahorroCFT > 0,
+      desembolsoTotalBanco,
+      desembolsoTotalCotripar,
+      diferenciaDesembolsoLiquida,
+      ahorroPrincipalUSD:
+        ahorroCFT > 0 ? ahorroCFT : ahorroEnPlazoEquiv > 0 ? ahorroEnPlazoEquiv : Math.max(0, ahorroCuotaAnio1),
       diferenciaTasa: diffTasaAnual,
       textoResumen:
-        ahorroCuotaAnio1 > 0
-          ? `💡 Venta Conveniente por Banco: Financiar a través de ${compareBancoNombre} ofrece una tasa preferencial de ${formatPercent(
+        diferenciaDesembolsoLiquida < 0
+          ? `💡 Análisis de Desembolso Total${notaCapitales}: El Desembolso Total en Financiación Cotripar es de ${formatUSD(
+              desembolsoTotalCotripar
+            )} frente a ${formatUSD(
+              desembolsoTotalBanco
+            )} en ${compareBancoNombre} (diferencia líquida de ${formatUSD(
+              Math.abs(diferenciaDesembolsoLiquida)
+            )}). No obstante, ${compareBancoNombre} ofrece una tasa preferencial de ${formatPercent(
               escenarioBancario.tasaAnual
             )} anual (${formatPercent(diffTasaAnual)} menor que el ${formatPercent(
               escenarioCotripar.tasaAnual
-            )} nominal anual de Cotripar) y reduce la carga de cuota del productor en ${formatUSD(
-              ahorroCuotaAnio1
-            )} en el primer año${
-              ahorroEnPlazoEquiv > 0
-                ? `, generando además un ahorro de ${formatUSD(ahorroEnPlazoEquiv)} en costos financieros a plazo equivalente.`
+            )} nominal anual de Cotripar)${
+              ahorroCuotaAnio1 > 0
+                ? ` y alivia el flujo de caja reduciendo la mayor cuota del primer año en ${formatUSD(ahorroCuotaAnio1)}.`
                 : '.'
             }`
           : `💡 Venta Conveniente por Banco: Financiar a través de ${compareBancoNombre} permite acceder a una tasa preferencial de ${formatPercent(
@@ -720,7 +768,18 @@ export const Calculator: React.FC<CalculatorProps> = ({
               escenarioCotripar.tasaMensual || 0.8
             ).toFixed(2)}% mensual) del crédito directo de Cotripar.`
     };
-  }, [escenarioCotripar, escenarioBancario, compareBancoNombre, plazoDetectadoMeses, compareBancoObj, compareTasaBancaria, capital]);
+  }, [
+    anticipoBancario,
+    anticipoCotripar,
+    capitalBancario,
+    capitalCotripar,
+    escenarioCotripar,
+    escenarioBancario,
+    compareBancoNombre,
+    plazoDetectadoMeses,
+    compareBancoObj,
+    compareTasaBancaria
+  ]);
 
   const capitalPresets = [25000, 50000, 75000, 110000, 150000, 200000];
 
@@ -736,9 +795,9 @@ export const Calculator: React.FC<CalculatorProps> = ({
         precioUnitarioUSD: 110000
       }
     ]);
-    setAnticipoUSD(0);
+    setAnticipoBancario(0);
+    setAnticipoCotripar(0);
     setValidationTriggered(false);
-    setCapital(110000);
     setPlazoAnios(5);
     setFrecuencia('anual');
     setModalidadSemestral('zafra_interes_primero');
@@ -778,8 +837,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
       return;
     }
 
-    if (capital < 1000) {
-      showToast('El Capital a financiar debe ser de al menos 1.000 USD.');
+    if (capitalBancario < 1000 || capitalCotripar < 1000) {
+      showToast('El Capital a financiar en ambas modalidades debe ser de al menos 1.000 USD.');
       return;
     }
 
@@ -820,8 +879,13 @@ export const Calculator: React.FC<CalculatorProps> = ({
         clienteRuc: rucFinal,
         maquinaDescripcion: maquinaFinal,
         items,
-        anticipoUSD,
-        capitalUSD: capital,
+        subtotalEquiposUSD: subtotalEquipos,
+        anticipoUSD: anticipoActivo,
+        anticipoBancarioUSD: anticipoBancario,
+        anticipoCotriparUSD: anticipoCotripar,
+        capitalUSD: capitalActivo,
+        capitalBancarioUSD: capitalBancario,
+        capitalCotriparUSD: capitalCotripar,
         bancoNombre: compareBancoNombre,
         resultadoBanco: escenarioBancario,
         resultadoCotripar: escenarioCotripar,
@@ -869,7 +933,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       return;
     }
 
-    if (capital < 1000) {
+    if (capitalActivo < 1000) {
       showToast('El Capital Solicitado a financiar debe ser de al menos 1.000 USD (verifique precios y entrega inicial).');
       return;
     }
@@ -916,7 +980,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       mayor_cuota_anio1_usd: resultado.cuotaMayorAnio1,
       cronograma_json: resultado.cronograma,
       items_json: items,
-      anticipo_usd: anticipoUSD,
+      anticipo_usd: anticipoActivo,
       tipo_financiacion: tipoFinanciacion,
       marca_producto: marcaProductoPrincipal,
       mes_colocacion: tipoFinanciacion === 'F_COTRIPAR' ? infoBloqueActivo.mesNombre : '',
@@ -1238,7 +1302,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
               <span>+ Agregar otro equipo / ítem</span>
             </button>
 
-            {/* Opcional: Entrega Inicial / Anticipo (USD) y Resumen de Equipos */}
+            {/* Entrega Inicial / Anticipo Independiente (Bancario vs. Cotripar) y Resumen de Equipos */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex items-center justify-between">
                 <div>
@@ -1254,11 +1318,13 @@ export const Calculator: React.FC<CalculatorProps> = ({
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="text-[11px] font-bold text-slate-600 block">
-                    Entrega Inicial / Anticipo (USD)
+                    {tipoFinanciacion === 'F_COTRIPAR'
+                      ? 'Entrega Inicial Cotripar (USD)'
+                      : 'Entrega Inicial Bancaria (USD)'}
                   </label>
-                  {anticipoUSD > 0 && (
+                  {anticipoActivo > 0 && (
                     <span className="text-[10px] font-bold text-cotripar-700">
-                      -{formatUSD(anticipoUSD)}
+                      -{formatUSD(anticipoActivo)}
                     </span>
                   )}
                 </div>
@@ -1270,8 +1336,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
                     type="number"
                     min="0"
                     step="500"
-                    value={anticipoUSD || ''}
-                    onChange={(e) => setAnticipoUSD(Math.max(0, parseFloat(e.target.value) || 0))}
+                    value={anticipoActivo || ''}
+                    onChange={(e) =>
+                      handleAnticipoActivoChange(Math.max(0, parseFloat(e.target.value) || 0))
+                    }
                     placeholder="0"
                     className="w-full pl-6 pr-2.5 py-1 text-xs font-bold text-slate-900 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-cotripar-700 outline-none"
                   />
@@ -1280,19 +1348,23 @@ export const Calculator: React.FC<CalculatorProps> = ({
             </div>
           </div>
 
-          {/* 2. Capital Solicitado (USD) — Calculado automáticamente */}
+          {/* 2. Capital Solicitado (USD) — Calculado automáticamente por modalidad */}
           <div className="space-y-1.5 pt-1">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
                 <DollarSign className="w-3.5 h-3.5 text-slate-400" />
-                <span>Capital a Financiar (USD)</span>
+                <span>
+                  {tipoFinanciacion === 'F_COTRIPAR'
+                    ? 'Capital a Financiar Cotripar (USD)'
+                    : 'Capital a Financiar Bancario (USD)'}
+                </span>
               </label>
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                   Suma Automática
                 </span>
                 <span className="text-cotripar-700 font-black text-sm">
-                  {formatUSD(capital)}
+                  {formatUSD(capitalActivo)}
                 </span>
               </div>
             </div>
@@ -1304,8 +1376,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 type="number"
                 min="1000"
                 step="1000"
-                value={capital || ''}
-                onChange={(e) => setCapital(Math.max(0, parseFloat(e.target.value) || 0))}
+                value={capitalActivo || ''}
+                onChange={(e) => handleCapitalManualChange(Math.max(0, parseFloat(e.target.value) || 0))}
                 className="w-full pl-8 pr-3.5 py-2.5 text-sm font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none transition-all"
                 placeholder="110,000"
               />
@@ -1319,7 +1391,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
                   type="button"
                   onClick={() => handleApplyPreset(val)}
                   className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
-                    capital === val
+                    capitalActivo === val
                       ? 'bg-cotripar-700 text-white shadow-sm'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
@@ -1872,8 +1944,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 </div>
                 <p className="text-xs text-slate-200 font-medium">
                   Productor: <strong className="text-white">{clienteNombre || 'Cliente General'}</strong> • RUC/C.I.:{' '}
-                  <strong className="text-white">{clienteRuc || 'N/A'}</strong> • Capital:{' '}
-                  <strong className="text-amber-300">{formatUSD(capital)}</strong>
+                  <strong className="text-white">{clienteRuc || 'N/A'}</strong> • Valor Equipos:{' '}
+                  <strong className="text-amber-300">{formatUSD(subtotalEquipos)}</strong>
                 </p>
                 <p className="text-[11px] text-slate-300 truncate max-w-2xl">
                   Equipos:{' '}
@@ -1943,9 +2015,15 @@ export const Calculator: React.FC<CalculatorProps> = ({
                 </div>
 
                 <div className="text-right">
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full inline-block">
-                    ✓ Mismo Capital: {formatUSD(capital)}
-                  </span>
+                  {capitalBancario === capitalCotripar ? (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full inline-block">
+                      ✓ Mismo Capital Financiado: {formatUSD(capitalBancario)}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full inline-block">
+                      ⚖️ Capitales Independientes: Banco {formatUSD(capitalBancario)} vs. Cotripar {formatUSD(capitalCotripar)}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -1972,11 +2050,25 @@ export const Calculator: React.FC<CalculatorProps> = ({
                     </span>
                   </div>
 
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500 font-medium">Capital Financiado:</span>
-                      <span className="font-bold text-slate-900">{formatUSD(escenarioBancario.capital)}</span>
+                  {/* Desglose de Capital Independiente del Banco */}
+                  <div className="p-2.5 rounded-xl bg-emerald-50/60 border border-emerald-200/80 space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 font-medium">Subtotal Equipamientos:</span>
+                      <span className="font-bold text-slate-800">{formatUSD(subtotalEquipos)}</span>
                     </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 font-medium">Entrega Inicial Bancaria:</span>
+                      <span className="font-bold text-emerald-700">
+                        {anticipoBancario > 0 ? `-${formatUSD(anticipoBancario)}` : '$ 0'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between pt-1 border-t border-emerald-200/80">
+                      <span className="text-slate-900 font-extrabold">Capital Financiado por el Banco:</span>
+                      <span className="font-black text-emerald-800">{formatUSD(escenarioBancario.capital)}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
                     <div className="flex justify-between py-1 border-b border-slate-100">
                       <span className="text-slate-500 font-medium">Plazo / Periodicidad:</span>
                       <span className="font-bold text-slate-800">
@@ -2017,10 +2109,18 @@ export const Calculator: React.FC<CalculatorProps> = ({
                         {formatUSD(escenarioBancario.cuotaMayorAnio1)}
                       </span>
                     </div>
-                    <div className="flex justify-between pt-2 items-center">
-                      <span className="text-slate-900 font-extrabold text-xs sm:text-sm">TOTAL A PAGAR:</span>
-                      <span className="font-black text-emerald-700 text-base sm:text-lg">
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-700 font-bold">Total a Pagar en el Banco:</span>
+                      <span className="font-extrabold text-emerald-800">
                         {formatUSD(escenarioBancario.totalPagado)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between pt-2 items-center">
+                      <span className="text-slate-900 font-extrabold text-xs sm:text-sm">
+                        TOTAL DESEMBOLSADO (BANCO):
+                      </span>
+                      <span className="font-black text-emerald-700 text-base sm:text-lg">
+                        {formatUSD(conclusionComparativa.desembolsoTotalBanco)}
                       </span>
                     </div>
                   </div>
@@ -2047,11 +2147,25 @@ export const Calculator: React.FC<CalculatorProps> = ({
                     </span>
                   </div>
 
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500 font-medium">Capital Financiado:</span>
-                      <span className="font-bold text-slate-900">{formatUSD(escenarioCotripar.capital)}</span>
+                  {/* Desglose de Capital Independiente de Cotripar */}
+                  <div className="p-2.5 rounded-xl bg-red-50/60 border border-red-200/80 space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 font-medium">Subtotal Equipamientos:</span>
+                      <span className="font-bold text-slate-800">{formatUSD(subtotalEquipos)}</span>
                     </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 font-medium">Entrega Inicial Cotripar:</span>
+                      <span className="font-bold text-cotripar-700">
+                        {anticipoCotripar > 0 ? `-${formatUSD(anticipoCotripar)}` : '$ 0'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between pt-1 border-t border-red-200/80">
+                      <span className="text-slate-900 font-extrabold">Capital Financiado por Cotripar:</span>
+                      <span className="font-black text-cotripar-800">{formatUSD(escenarioCotripar.capital)}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
                     <div className="flex justify-between py-1 border-b border-slate-100">
                       <span className="text-slate-500 font-medium">Plazo / Cuotas Configuradas:</span>
                       <span className="font-bold text-slate-800">
@@ -2095,10 +2209,18 @@ export const Calculator: React.FC<CalculatorProps> = ({
                         / {formatUSD(escenarioCotripar.cuotaMayorAnio1)}
                       </span>
                     </div>
-                    <div className="flex justify-between pt-2 items-center">
-                      <span className="text-slate-900 font-extrabold text-xs sm:text-sm">TOTAL A PAGAR:</span>
-                      <span className="font-black text-cotripar-700 text-base sm:text-lg">
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-700 font-bold">Total a Pagar en Cotripar:</span>
+                      <span className="font-extrabold text-cotripar-800">
                         {formatUSD(escenarioCotripar.totalPagado)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between pt-2 items-center">
+                      <span className="text-slate-900 font-extrabold text-xs sm:text-sm">
+                        TOTAL DESEMBOLSADO (COTRIPAR):
+                      </span>
+                      <span className="font-black text-cotripar-700 text-base sm:text-lg">
+                        {formatUSD(conclusionComparativa.desembolsoTotalCotripar)}
                       </span>
                     </div>
                   </div>
@@ -2106,7 +2228,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
               </div>
 
               {/* Cuadro de Conclusión / Ventaja Comercial (Recomendación al Productor) */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/70 to-emerald-50 border-2 border-emerald-400 shadow-sm space-y-2">
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/70 to-emerald-50 border-2 border-emerald-400 shadow-sm space-y-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <span className="p-1.5 rounded-xl bg-emerald-600 text-white">
@@ -2122,6 +2244,48 @@ export const Calculator: React.FC<CalculatorProps> = ({
                     </span>
                   )}
                 </div>
+
+                {/* Resumen de Desembolsos Totales Efectivos */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                  <div className="p-2.5 rounded-xl bg-white/90 border border-emerald-200 flex flex-col">
+                    <span className="text-[10px] font-bold uppercase text-slate-500">
+                      Total Desembolsado en el Banco
+                    </span>
+                    <span className="text-xs font-black text-emerald-800">
+                      {formatUSD(conclusionComparativa.desembolsoTotalBanco)}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Entrada ({formatUSD(anticipoBancario)}) + Banco ({formatUSD(escenarioBancario.totalPagado)})
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-white/90 border border-red-200 flex flex-col">
+                    <span className="text-[10px] font-bold uppercase text-slate-500">
+                      Total Desembolsado en Cotripar
+                    </span>
+                    <span className="text-xs font-black text-cotripar-700">
+                      {formatUSD(conclusionComparativa.desembolsoTotalCotripar)}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Entrada ({formatUSD(anticipoCotripar)}) + Cotripar ({formatUSD(escenarioCotripar.totalPagado)})
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-emerald-700 text-white flex flex-col justify-center">
+                    <span className="text-[10px] font-bold uppercase text-emerald-100">
+                      Diferencia Financiera Líquida
+                    </span>
+                    <span className="text-xs sm:text-sm font-black">
+                      {formatUSD(Math.abs(conclusionComparativa.diferenciaDesembolsoLiquida))}
+                    </span>
+                    <span className="text-[10px] text-emerald-100">
+                      {conclusionComparativa.diferenciaDesembolsoLiquida >= 0
+                        ? `A favor de ${compareBancoNombre}`
+                        : 'Menor desembolso en Cotripar'}
+                    </span>
+                  </div>
+                </div>
+
                 <p className="text-xs sm:text-sm text-slate-800 font-semibold leading-relaxed">
                   {conclusionComparativa.textoResumen}
                 </p>

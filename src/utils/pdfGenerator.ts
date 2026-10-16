@@ -520,8 +520,13 @@ export interface DatosReporteComparativo {
   clienteRuc: string;
   maquinaDescripcion: string;
   items: ItemMaquinaria[];
+  subtotalEquiposUSD?: number;
   anticipoUSD: number;
+  anticipoBancarioUSD?: number;
+  anticipoCotriparUSD?: number;
   capitalUSD: number;
+  capitalBancarioUSD?: number;
+  capitalCotriparUSD?: number;
   bancoNombre: string;
   resultadoBanco: ResultadoAleman;
   resultadoCotripar: ResultadoAleman;
@@ -618,8 +623,18 @@ export async function generarPDFComparativo(datos: DatosReporteComparativo): Pro
   doc.setTextColor(30, 41, 59);
   let currentY = 40;
 
+  const rb = datos.resultadoBanco;
+  const rc = datos.resultadoCotripar;
+
+  const subtotalEquiposCalc =
+    datos.subtotalEquiposUSD ??
+    datos.items.reduce((sum, it) => sum + (Number(it.cantidad) || 1) * (Number(it.precioUnitarioUSD) || 0), 0);
+
+  const anticipoBanco = datos.anticipoBancarioUSD ?? datos.anticipoUSD ?? 0;
+  const anticipoCotripar = datos.anticipoCotriparUSD ?? datos.anticipoUSD ?? 0;
+
   // Box 1: Client and Quote Summary
-  const box1Height = 20;
+  const box1Height = 23;
   doc.setFillColor(254, 252, 252);
   doc.setDrawColor(226, 232, 240);
   doc.roundedRect(14, currentY, pageWidth - 28, box1Height, 2, 2, 'FD');
@@ -630,33 +645,47 @@ export async function generarPDFComparativo(datos: DatosReporteComparativo): Pro
   doc.text('1. DATOS DEL PRODUCTOR Y OPERACIÓN COTIZADA', 18, currentY + 5.2);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.2);
+  doc.setFontSize(7.0);
   doc.setTextColor(71, 85, 105);
-  doc.text('Cliente / Razón Social:', 18, currentY + 11);
+  doc.text('Cliente / Razón Social:', 18, currentY + 10.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text((datos.clienteNombre || 'Cliente General').substring(0, 38), 48, currentY + 11);
+  doc.text((datos.clienteNombre || 'Cliente General').substring(0, 36), 48, currentY + 10.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('RUC / C.I.:', 18, currentY + 16);
+  doc.text('RUC / C.I.:', 18, currentY + 15.2);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(datos.clienteRuc || 'N/A', 48, currentY + 16);
+  doc.text(datos.clienteRuc || 'N/A', 48, currentY + 15.2);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Capital a Financiar:', 110, currentY + 11);
+  doc.text('Valor Total Máquinas:', 18, currentY + 19.8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(formatUSD(subtotalEquiposCalc), 48, currentY + 19.8);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Escenario Banco:', 106, currentY + 10.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 118, 110);
+  doc.text(`Anticipo: ${formatUSD(anticipoBanco)}  |  Cap. Neto: ${formatUSD(rb.capital)}`, 134, currentY + 10.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Escenario Cotripar:', 106, currentY + 15.2);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(200, 16, 46);
-  doc.text(formatUSD(datos.capitalUSD), 142, currentY + 11);
+  doc.text(`Anticipo: ${formatUSD(anticipoCotripar)}  |  Cap. Neto: ${formatUSD(rc.capital)}`, 134, currentY + 15.2);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text('Entrega Inicial:', 110, currentY + 16);
+  doc.text('Entidad Comparada:', 106, currentY + 19.8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(datos.anticipoUSD > 0 ? formatUSD(datos.anticipoUSD) : '$ 0 (Sin anticipo)', 142, currentY + 16);
+  doc.text(`${datos.bancoNombre} vs. Financiación Cotripar`, 134, currentY + 19.8);
 
   currentY += box1Height + 3.5;
 
@@ -718,9 +747,6 @@ export async function generarPDFComparativo(datos: DatosReporteComparativo): Pro
   doc.setTextColor(200, 16, 46);
   doc.text('2. COMPARATIVA EJECUTIVA LADO A LADO (BANCO VS. FINANCIACIÓN COTRIPAR)', 14, currentY);
 
-  const rb = datos.resultadoBanco;
-  const rc = datos.resultadoCotripar;
-
   const plazoBancoTxt =
     Math.abs(rb.plazoAnios - 1.5) < 0.05
       ? '18 Meses (1.5 Años)'
@@ -730,19 +756,39 @@ export async function generarPDFComparativo(datos: DatosReporteComparativo): Pro
   const cuotaPromedioCotripar =
     rc.cronograma.length > 0 ? rc.totalCuotas / rc.cronograma.length : rc.cuotaMayorAnio1;
 
+  const desembolsoTotalBanco = anticipoBanco + rb.totalPagado;
+  const desembolsoTotalCotripar = anticipoCotripar + rc.totalPagado;
+
   const diffIntereses = rc.totalIntereses - rb.totalIntereses;
   const diffIva = rc.totalIva - rb.totalIva;
   const diffCFT = rc.costoFinancieroTotal - rb.costoFinancieroTotal;
-  const diffTotal = rc.totalPagado - rb.totalPagado;
+  const diffTotalFinanciado = rc.totalPagado - rb.totalPagado;
+  const diffDesembolsoTotal = desembolsoTotalCotripar - desembolsoTotalBanco;
 
   const formatDiff = (val: number) => {
     if (Math.abs(val) < 1) return '$ 0 (Igual)';
     if (val > 0) return `Ahorro Banco: ${formatUSD(val)}`;
-    return `Diferencia: ${formatUSD(Math.abs(val))}`;
+    return `Menor en Cotripar: ${formatUSD(Math.abs(val))}`;
   };
 
   const compareRows = [
-    ['Capital Solicitado (USD)', formatUSD(rb.capital), formatUSD(rc.capital), 'Mismo Capital'],
+    ['Valor Total de las Máquinas', formatUSD(subtotalEquiposCalc), formatUSD(subtotalEquiposCalc), 'Mismo Valor Equipos'],
+    [
+      'Entrega Inicial / Anticipo',
+      anticipoBanco > 0 ? `-${formatUSD(anticipoBanco)}` : '$ 0 (Sin anticipo)',
+      anticipoCotripar > 0 ? `-${formatUSD(anticipoCotripar)}` : '$ 0 (Sin anticipo)',
+      anticipoBanco === anticipoCotripar
+        ? 'Mismo Anticipo'
+        : `Dif. Anticipo: ${formatUSD(Math.abs(anticipoBanco - anticipoCotripar))}`
+    ],
+    [
+      'Capital Financiado (Saldo Neto)',
+      formatUSD(rb.capital),
+      formatUSD(rc.capital),
+      rb.capital === rc.capital
+        ? 'Mismo Capital'
+        : `Dif. Capital: ${formatUSD(Math.abs(rb.capital - rc.capital))}`
+    ],
     ['Plazo y Estructura', `${plazoBancoTxt} • ${rb.frecuencia === 'semestral' ? 'Semestral' : 'Anual'}`, plazoCotriparTxt, 'Plazo Comparado'],
     [
       'Tasa de Interés Aplicada',
@@ -758,7 +804,7 @@ export async function generarPDFComparativo(datos: DatosReporteComparativo): Pro
     ],
     ['Total Intereses Proyectados', formatUSD(rb.totalIntereses), formatUSD(rc.totalIntereses), formatDiff(diffIntereses)],
     ['Total IVA s/ Intereses (10%)', formatUSD(rb.totalIva), formatUSD(rc.totalIva), formatDiff(diffIva)],
-    ['COSTO FINANCIERO TOTAL (CFT)', formatUSD(rb.costoFinancieroTotal), formatUSD(rc.costoFinancieroTotal), formatDiff(diffCFT)],
+    ['Encargos Financieros (CFT)', formatUSD(rb.costoFinancieroTotal), formatUSD(rc.costoFinancieroTotal), formatDiff(diffCFT)],
     [
       'Cuota Año 1 / Cuota Máxima',
       `${formatUSD(rb.cuotaMayorAnio1)} (Mayor Año 1)`,
@@ -767,7 +813,8 @@ export async function generarPDFComparativo(datos: DatosReporteComparativo): Pro
         ? `${formatUSD(rc.cuotaMayorAnio1 - rb.cuotaMayorAnio1)} menor en Banco`
         : '-'
     ],
-    ['TOTAL A PAGAR (Capital + CFT)', formatUSD(rb.totalPagado), formatUSD(rc.totalPagado), formatDiff(diffTotal)]
+    ['Total Financiado (Capital + CFT)', formatUSD(rb.totalPagado), formatUSD(rc.totalPagado), formatDiff(diffTotalFinanciado)],
+    ['DESEMBOLSO TOTAL (Entrega + Financiado)', formatUSD(desembolsoTotalBanco), formatUSD(desembolsoTotalCotripar), formatDiff(diffDesembolsoTotal)]
   ];
 
   autoTable(doc, {
@@ -784,8 +831,8 @@ export async function generarPDFComparativo(datos: DatosReporteComparativo): Pro
     body: compareRows,
     theme: 'grid',
     styles: {
-      fontSize: 7.2,
-      cellPadding: 1.8,
+      fontSize: 6.9,
+      cellPadding: 1.45,
       textColor: [30, 41, 59],
       lineColor: [226, 232, 240],
       lineWidth: 0.15,
@@ -805,9 +852,12 @@ export async function generarPDFComparativo(datos: DatosReporteComparativo): Pro
       fontSize: 7.2
     },
     didParseCell: (data) => {
-      if (data.section === 'body' && (data.row.index === 6 || data.row.index === 8)) {
+      if (
+        data.section === 'body' &&
+        (data.row.index === 2 || data.row.index === 8 || data.row.index === 10 || data.row.index === 11)
+      ) {
         data.cell.styles.fontStyle = 'bold';
-        data.cell.styles.fillColor = data.row.index === 8 ? [254, 242, 242] : [241, 245, 249];
+        data.cell.styles.fillColor = data.row.index === 11 ? [254, 242, 242] : [241, 245, 249];
         if (data.column.index === 1) {
           data.cell.styles.textColor = [15, 118, 110];
         } else if (data.column.index === 2) {
