@@ -22,6 +22,7 @@ import {
   X,
   CheckCircle2,
   Plus,
+  Scale,
   Tag
 } from 'lucide-react';
 import { generarPDFCartaOferta, type CartaOfertaPayload } from '../utils/offerLetterGenerator';
@@ -523,12 +524,32 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     showToast('¡PDF histórico descargado con éxito!');
   };
 
+  const handleDownloadComparativoPDF = async (sim: SimulacionPDF) => {
+    if (!sim.comparativo_json) {
+      showToast('No se encontró el comparativo adjunto');
+      return;
+    }
+    const safeName = (sim.cliente_nombre || 'Cliente').replace(/\s+/g, '_');
+    const safeRuc = (sim.cliente_ruc || '').replace(/\s+/g, '');
+    const doc = await generarPDFComparativo(sim.comparativo_json);
+    doc.save(`Cotripar_Comparativo_${safeName}${safeRuc ? `_${safeRuc}` : ''}.pdf`);
+    showToast('¡PDF Comparativo descargado con éxito!');
+  };
+
   const handleOpenOfferLetterModal = (sim: SimulacionPDF) => {
-    const isCotripar = isCotriparSim(sim);
+    const isComparativo = isComparativoSim(sim);
     const dateObj = sim.created_at ? new Date(sim.created_at) : new Date();
     const year = dateObj.getFullYear();
     const suffix = sim.id ? sim.id.slice(0, 4).toUpperCase() : '001';
     const autoNum = `OF-${year}-${suffix}`;
+
+    // Si es comparativo, extrae los datos del banco comparado
+    const bancoNombreFinal = isComparativo
+      ? (sim.comparativo_json?.bancoComparado ||
+         sim.comparativo_json?.bancoNombre ||
+         (sim.banco_entidad || '').replace(' vs. Financiación Cotripar', '').trim() ||
+         'Banco Oficial')
+      : (sim.banco_entidad || 'Banco Oficial');
 
     const initialItems: ItemMaquinaria[] =
       sim.items_json && Array.isArray(sim.items_json) && sim.items_json.length > 0
@@ -546,7 +567,10 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
             }
           ];
 
-    const initialAnticipo = Number(sim.anticipo_usd) || 0;
+    const initialAnticipo = isComparativo && sim.comparativo_json?.anticipoBanco !== undefined
+      ? Number(sim.comparativo_json.anticipoBanco)
+      : (Number(sim.anticipo_usd) || 0);
+
     const itemsTotal = initialItems.reduce(
       (acc, it) => acc + (Number(it.cantidad) || 1) * (Number(it.precioUnitarioUSD) || 0),
       0
@@ -559,7 +583,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       clienteNombre: sim.cliente_nombre || '',
       clienteRuc: sim.cliente_ruc || '',
       vendedorNombre: sim.vendedor_nombre || currentUser?.nombre || 'Asesor Comercial Cotripar',
-      bancoEntidad: isCotripar ? 'Financiación Cotripar' : (sim.banco_entidad || 'Banco Oficial'),
+      bancoEntidad: bancoNombreFinal,
       maquinaImplemento: sim.maquina_implemento || 'Equipamiento Agrícola Cotripar',
       especificacionTecnica:
         'Maquinaria agrícola con especificaciones estándar del fabricante, lista para entrega técnica y garantía integral.',
@@ -639,7 +663,14 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       ];
       const fechaEmision = `${dateObj.getDate()} de ${mesesNombres[dateObj.getMonth()]} de ${dateObj.getFullYear()}`;
 
-      const isCotripar = isCotriparSim(offerModalSim);
+      const isComparativo = isComparativoSim(offerModalSim);
+      const bancoNombreFinal = offerFormData.bancoEntidad ||
+        (isComparativo
+          ? (offerModalSim.comparativo_json?.bancoComparado ||
+             offerModalSim.comparativo_json?.bancoNombre ||
+             (offerModalSim.banco_entidad || '').replace(' vs. Financiación Cotripar', '').trim())
+          : offerModalSim.banco_entidad) || 'Banco Oficial';
+
       const payload: CartaOfertaPayload = {
         numeroOferta: offerFormData.numeroOferta || `OF-${dateObj.getFullYear()}-001`,
         fechaEmision,
@@ -647,7 +678,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         clienteNombre: offerFormData.clienteNombre || offerModalSim.cliente_nombre,
         clienteRuc: offerFormData.clienteRuc || offerModalSim.cliente_ruc || '',
         vendedorNombre: offerFormData.vendedorNombre || offerModalSim.vendedor_nombre,
-        bancoEntidad: isCotripar ? 'Financiación Cotripar' : (offerFormData.bancoEntidad || offerModalSim.banco_entidad),
+        bancoEntidad: bancoNombreFinal,
         maquinaImplemento: offerFormData.maquinaImplemento || offerModalSim.maquina_implemento || 'Maquinaria Agrícola',
         especificacionTecnica: offerFormData.especificacionTecnica,
         cantidad: Number(offerFormData.cantidad) || 1,
@@ -658,23 +689,28 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         telefono: offerFormData.telefono,
         atencionContacto: offerFormData.atencionContacto,
         items: offerFormData.items,
-        plazoAnios: offerModalSim.plazo_anios,
-        periodicidad: offerModalSim.periodicidad,
-        modalidadSemestral: offerModalSim.modalidad_semestral,
-        tasaAnual: offerModalSim.tasa_anual,
-        gastoAdminUSD: offerModalSim.gasto_admin_usd,
-        mayorCuotaAnio1USD: offerModalSim.mayor_cuota_anio1_usd,
-        totalPagadoUSD: offerModalSim.total_pagado_usd,
-        tipoFinanciacion: isCotripar ? 'F_COTRIPAR' : offerModalSim.tipo_financiacion,
-        mesColocacion: offerModalSim.mes_colocacion,
-        fechaTopeVencimiento: offerModalSim.fecha_tope_vencimiento,
-        plazoMeses: isCotripar ? (offerModalSim.plazo_meses || 17) : offerModalSim.plazo_meses,
-        tasaMensual: isCotripar
-          ? (offerModalSim.tasa_anual > 2 ? offerModalSim.tasa_anual / 12 : offerModalSim.tasa_anual)
-          : undefined,
-        fechasCuotas: offerModalSim.fechas_cuotas,
-        fechaUltimaCuota: offerModalSim.fecha_ultima_cuota,
-        cantidadCuotas: offerModalSim.cantidad_cuotas || (offerModalSim.cronograma_json ? offerModalSim.cronograma_json.length : undefined)
+        plazoAnios: isComparativo && offerModalSim.comparativo_json?.plazoAniosBanco
+          ? Number(offerModalSim.comparativo_json.plazoAniosBanco)
+          : offerModalSim.plazo_anios,
+        periodicidad: isComparativo
+          ? 'semestral'
+          : offerModalSim.periodicidad,
+        modalidadSemestral: isComparativo && offerModalSim.comparativo_json?.compareEsquemaBancario
+          ? offerModalSim.comparativo_json.compareEsquemaBancario
+          : offerModalSim.modalidad_semestral,
+        tasaAnual: isComparativo && offerModalSim.comparativo_json?.tasaAnualBanco
+          ? Number(offerModalSim.comparativo_json.tasaAnualBanco)
+          : offerModalSim.tasa_anual,
+        gastoAdminUSD: isComparativo && offerModalSim.comparativo_json?.resultadoBanco?.gastoAdmin !== undefined
+          ? Number(offerModalSim.comparativo_json.resultadoBanco.gastoAdmin)
+          : offerModalSim.gasto_admin_usd,
+        mayorCuotaAnio1USD: isComparativo && offerModalSim.comparativo_json?.resultadoBanco?.cuotaMayorAnio1 !== undefined
+          ? Number(offerModalSim.comparativo_json.resultadoBanco.cuotaMayorAnio1)
+          : offerModalSim.mayor_cuota_anio1_usd,
+        totalPagadoUSD: isComparativo && offerModalSim.comparativo_json?.resultadoBanco?.totalPagado !== undefined
+          ? Number(offerModalSim.comparativo_json.resultadoBanco.totalPagado)
+          : offerModalSim.total_pagado_usd,
+        tipoFinanciacion: 'BANCARIA'
       };
 
       const doc = await generarPDFCartaOferta(payload);
@@ -1179,7 +1215,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       </td>
 
                       <td className="py-3 px-3 whitespace-nowrap">
-                        {isComparativoSim(sim) ? (
+                        {isComparativoSim(sim) && sim.tipo_financiacion === 'COMPARATIVO' ? (
                           <div>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="inline-flex items-center gap-1 font-extrabold text-indigo-800 bg-indigo-100 border border-indigo-300 px-2 py-0.5 rounded-md text-[11px] shadow-xs">
@@ -1196,19 +1232,33 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                           </div>
                         ) : isCotriparSim(sim) ? (
                           <div>
-                            <span className="inline-flex items-center gap-1 font-extrabold text-cotripar-700 bg-cotripar-50 border border-cotripar-200 px-2 py-0.5 rounded-md text-[11px]">
-                              Financiación Cotripar
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="inline-flex items-center gap-1 font-extrabold text-cotripar-700 bg-cotripar-50 border border-cotripar-200 px-2 py-0.5 rounded-md text-[11px]">
+                                Financiación Cotripar
+                              </span>
+                              {Boolean(sim.comparativo_json) && (
+                                <span className="inline-flex items-center gap-1 font-extrabold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded text-[10px] shadow-xs" title="Tiene comparativo bancario adjunto">
+                                  ⚖️ Comparativo Adjunto
+                                </span>
+                              )}
+                            </div>
                             <span className="text-[10px] text-slate-500 block mt-0.5 font-semibold">
                               {Number(sim.tasa_anual > 2 ? sim.tasa_anual / 12 : sim.tasa_anual).toFixed(2)}% mensual
                             </span>
                           </div>
                         ) : (
                           <div>
-                            <span className="font-semibold text-slate-800 flex items-center gap-1">
-                              <Building2 className="w-3 h-3 text-slate-400" />
-                              {sim.banco_entidad}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-semibold text-slate-800 flex items-center gap-1">
+                                <Building2 className="w-3 h-3 text-slate-400" />
+                                {sim.banco_entidad}
+                              </span>
+                              {Boolean(sim.comparativo_json) && (
+                                <span className="inline-flex items-center gap-1 font-extrabold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded text-[10px] shadow-xs" title="Tiene comparativo adjunto">
+                                  ⚖️ Comparativo Adjunto
+                                </span>
+                              )}
+                            </div>
                             <span className="text-[10px] text-slate-500 block">{formatPercent(sim.tasa_anual)}</span>
                           </div>
                         )}
@@ -1258,7 +1308,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
 
                       <td className="py-3 px-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1.5">
-                          {(currentUser?.rol === 'admin' || currentUser?.rol === 'coordinador') && (
+                          {!isCotriparSim(sim) && (currentUser?.rol === 'admin' || currentUser?.rol === 'coordinador') && (
                             <button
                               onClick={() => handleOpenOfferLetterModal(sim)}
                               className="px-2.5 py-1 text-cotripar-700 hover:text-white hover:bg-cotripar-700 bg-cotripar-50 border border-cotripar-200 rounded-lg transition-all duration-150 flex items-center gap-1 font-bold text-xs shadow-xs"
@@ -1266,6 +1316,16 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                             >
                               <FileSignature className="w-3.5 h-3.5" />
                               <span>Carta Oferta</span>
+                            </button>
+                          )}
+
+                          {Boolean(sim.comparativo_json) && (
+                            <button
+                              onClick={() => handleDownloadComparativoPDF(sim)}
+                              className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition-colors"
+                              title="Descargar Reporte Comparativo (Banco vs. Cotripar)"
+                            >
+                              <Scale className="w-4 h-4" />
                             </button>
                           )}
 

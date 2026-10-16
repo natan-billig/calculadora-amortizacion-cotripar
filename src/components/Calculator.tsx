@@ -27,6 +27,7 @@ import {
   calcularMesesDesdeColocacion
 } from '../utils/calculatorEngine';
 import { generarPDFSimulacion, generarPDFComparativo } from '../utils/pdfGenerator';
+import { generarPDFCartaOferta, type CartaOfertaPayload } from '../utils/offerLetterGenerator';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -54,6 +55,7 @@ import {
   Scale,
   ArrowLeftRight,
   TrendingDown,
+  FileSignature,
   X
 } from 'lucide-react';
 
@@ -124,6 +126,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const [comparePlazoAnios, setComparePlazoAnios] = useState<number>(1.5);
   const [compareEsquemaBancario, setCompareEsquemaBancario] = useState<ModalidadSemestral>('constante');
   const [isGeneratingComparePdf, setIsGeneratingComparePdf] = useState<boolean>(false);
+  const [isGeneratingOffer, setIsGeneratingOffer] = useState<boolean>(false);
+  const [currentSimulationId, setCurrentSimulationId] = useState<string | null>(null);
 
   // Banks from Supabase
   const [bancos, setBancos] = useState<BancoTasa[]>([]);
@@ -919,71 +923,178 @@ export const Calculator: React.FC<CalculatorProps> = ({
       doc.save(`Cotripar_Comparativo_${safeName}_${safeRuc}.pdf`);
 
       // Persistir Comparativo en el Historial (Supabase)
-      const payloadComparativo: SimulacionPDF = {
-        usuario_id: currentUser?.id || null,
-        vendedor_nombre: currentUser?.nombre || 'Asesor Cotripar',
-        cliente_nombre: clienteFinal,
-        cliente_ruc: rucFinal,
-        maquina_implemento: maquinaFinal,
-        capital_usd: Number(escenarioBancario.capital || capitalActivo) || 0,
-        gasto_admin_usd: 0,
-        banco_entidad: compareBancoNombre + ' vs. Financiación Cotripar',
-        tasa_anual:
-          Number(
-            compareBancoObj?.tasas_por_plazo?.[String(comparePlazoAnios)] ??
-              compareBancoObj?.tasa_anual ??
-              compareTasaBancaria
-          ) || 0,
-        plazo_anios: Number(comparePlazoAnios || plazoAnios) || 1,
-        periodicidad: 'Comparativo Dual',
-        total_intereses_usd: Number(escenarioBancario.totalIntereses) || 0,
-        total_iva_usd: Number(escenarioBancario.totalIva) || 0,
-        costo_financiero_total_usd: Number(escenarioBancario.costoFinancieroTotal) || 0,
-        total_pagado_usd: Number(escenarioBancario.totalPagado) || 0,
-        mayor_cuota_anio1_usd: Number(escenarioBancario.cuotaMayorAnio1) || 0,
-        cronograma_json: escenarioBancario.cronograma || [],
-        items_json: items || [],
-        anticipo_usd: Number(anticipoActivo) || 0,
-        tipo_financiacion: 'COMPARATIVO' as any,
-        marca_producto: marcaProductoPrincipal,
-        cantidad_cuotas: 2,
-        fechas_cuotas: [],
-        fecha_ultima_cuota: '',
-        modalidad_semestral: '',
-        comparativo_json: {
-          ...datosComparativo,
-          compareBancoId: compareBancoId || selectedBancoId,
-          comparePlazoAnios,
-          compareEsquemaBancario,
-          mesColocacion,
-          fechasCuotas: fechasCuotas || [],
-          periodicidadCotripar,
-          esquemaSemestralCotripar,
-          desembolsoTotalBanco: conclusionComparativa.desembolsoTotalBanco,
-          desembolsoTotalCotripar: conclusionComparativa.desembolsoTotalCotripar,
-          diferenciaDesembolsoLiquida: conclusionComparativa.diferenciaDesembolsoLiquida,
-          ahorroPrincipalUSD: conclusionComparativa.esPlazoExtendido
-            ? conclusionComparativa.alivioCuota
-            : conclusionComparativa.ahorroReal
-        }
+      const comparativoData = {
+        ...datosComparativo,
+        bancoComparado: compareBancoNombre,
+        plazoAniosBanco: comparePlazoAnios,
+        tasaAnualBanco: compareTasaBancaria,
+        capitalBanco: capitalBancario,
+        anticipoBanco: anticipoBancario,
+        resultadoBanco: escenarioBancario,
+        resultadoCotripar: escenarioCotripar,
+        conclusion: conclusionComparativa,
+        compareBancoId: compareBancoId || selectedBancoId,
+        comparePlazoAnios,
+        compareEsquemaBancario,
+        mesColocacion,
+        fechasCuotas: fechasCuotas || [],
+        periodicidadCotripar,
+        esquemaSemestralCotripar,
+        desembolsoTotalBanco: conclusionComparativa.desembolsoTotalBanco,
+        desembolsoTotalCotripar: conclusionComparativa.desembolsoTotalCotripar,
+        diferenciaDesembolsoLiquida: conclusionComparativa.diferenciaDesembolsoLiquida,
+        ahorroPrincipalUSD: conclusionComparativa.esPlazoExtendido
+          ? conclusionComparativa.alivioCuota
+          : conclusionComparativa.ahorroReal
       };
 
-      const { error: insertError } = await supabase
-        .from('simulaciones_pdf')
-        .insert([payloadComparativo]);
+      if (currentSimulationId) {
+        // Vinculación directa: actualiza la simulación principal con el comparativo adjunto
+        const { error: updateError } = await supabase
+          .from('simulaciones_pdf')
+          .update({ comparativo_json: comparativoData })
+          .eq('id', currentSimulationId);
 
-      if (insertError) {
-        console.error('Error al guardar comparativo en Supabase:', insertError);
-        showToast('Atención: El PDF comparativo se generó pero hubo un error al sincronizar con el historial');
+        if (updateError) {
+          console.error('Error al vincular comparativo en Supabase:', updateError);
+          showToast('Atención: El PDF se descargó, pero hubo un error al vincular el comparativo en la simulación activa');
+        } else {
+          console.log('Comparativo vinculado con éxito a la simulación activa');
+          showToast('¡Reporte Comparativo generado en PDF y vinculado a la simulación activa!');
+        }
       } else {
-        console.log('Comparativo guardado con éxito en Supabase');
-        showToast('¡Reporte Comparativo (Banco vs. Cotripar) generado en PDF y guardado en el historial!');
+        // Si no hay simulación activa, inserta un registro independiente de tipo COMPARATIVO
+        const payloadComparativo: SimulacionPDF = {
+          usuario_id: currentUser?.id || null,
+          vendedor_nombre: currentUser?.nombre || 'Asesor Cotripar',
+          cliente_nombre: clienteFinal,
+          cliente_ruc: rucFinal,
+          maquina_implemento: maquinaFinal,
+          capital_usd: Number(escenarioBancario.capital || capitalActivo) || 0,
+          gasto_admin_usd: 0,
+          banco_entidad: compareBancoNombre + ' vs. Financiación Cotripar',
+          tasa_anual:
+            Number(
+              compareBancoObj?.tasas_por_plazo?.[String(comparePlazoAnios)] ??
+                compareBancoObj?.tasa_anual ??
+                compareTasaBancaria
+            ) || 0,
+          plazo_anios: Number(comparePlazoAnios || plazoAnios) || 1,
+          periodicidad: 'Comparativo Dual',
+          total_intereses_usd: Number(escenarioBancario.totalIntereses) || 0,
+          total_iva_usd: Number(escenarioBancario.totalIva) || 0,
+          costo_financiero_total_usd: Number(escenarioBancario.costoFinancieroTotal) || 0,
+          total_pagado_usd: Number(escenarioBancario.totalPagado) || 0,
+          mayor_cuota_anio1_usd: Number(escenarioBancario.cuotaMayorAnio1) || 0,
+          cronograma_json: escenarioBancario.cronograma || [],
+          items_json: items || [],
+          anticipo_usd: Number(anticipoActivo) || 0,
+          tipo_financiacion: 'COMPARATIVO' as any,
+          marca_producto: marcaProductoPrincipal,
+          cantidad_cuotas: 2,
+          fechas_cuotas: [],
+          fecha_ultima_cuota: '',
+          modalidad_semestral: '',
+          comparativo_json: comparativoData
+        };
+
+        const { data: insertedComp, error: insertError } = await supabase
+          .from('simulaciones_pdf')
+          .insert([payloadComparativo])
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error('Error al guardar comparativo en Supabase:', insertError);
+          showToast('Atención: El PDF comparativo se generó pero hubo un error al sincronizar con el historial');
+        } else {
+          if (insertedComp?.id) {
+            setCurrentSimulationId(insertedComp.id);
+          }
+          console.log('Comparativo guardado con éxito en Supabase');
+          showToast('¡Reporte Comparativo (Banco vs. Cotripar) generado en PDF y guardado en el historial!');
+        }
       }
     } catch (err) {
       console.error(err);
       showToast('Error al generar el PDF comparativo');
     } finally {
       setIsGeneratingComparePdf(false);
+    }
+  };
+
+  // Emisión Directa de Carta de Oferta Comercial para el Banco Comparado
+  const handleEmitirCartaOfertaBanco = async () => {
+    setIsGeneratingOffer(true);
+    try {
+      const clienteFinal = clienteNombre.trim() || 'Cliente General';
+      const rucFinal = clienteRuc.trim() || 'N/A';
+      const maquinaFinal =
+        items
+          .filter((it) => it.descripcion.trim())
+          .map(
+            (it) =>
+              `${it.marca ? `[${it.marca}] ` : ''}${it.cantidad > 1 ? `${it.cantidad}x ` : ''}${it.descripcion.trim()}`
+          )
+          .join(' + ') || 'Equipamiento Agrícola Cotripar';
+
+      const dateObj = new Date();
+      const year = dateObj.getFullYear();
+      const mesesNombres = [
+        'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Noviembre', 'Diciembre'
+      ];
+      const fechaEmision = `${dateObj.getDate()} de ${mesesNombres[dateObj.getMonth()]} de ${year}`;
+      const suffix = Math.floor(100 + Math.random() * 900);
+      const autoNum = `OF-${year}-${suffix}`;
+
+      const payload: CartaOfertaPayload = {
+        numeroOferta: autoNum,
+        fechaEmision,
+        validezOferta: '20 días calendario',
+        clienteNombre: clienteFinal,
+        clienteRuc: rucFinal,
+        vendedorNombre: currentUser?.nombre || 'Asesor Comercial Cotripar',
+        bancoEntidad: compareBancoNombre,
+        maquinaImplemento: maquinaFinal,
+        especificacionTecnica:
+          'Maquinaria agrícola con especificaciones técnicas estándar del fabricante, lista para entrega técnica y garantía integral.',
+        cantidad: items.reduce((acc, it) => acc + (Number(it.cantidad) || 1), 0),
+        precioTotalUSD: subtotalEquipos,
+        anticipoUSD: anticipoBancario,
+        descuentoUSD: 0,
+        ubicacion: 'Santa Rita / Alto Paraná, Paraguay',
+        telefono: '+595 673 220 000',
+        atencionContacto: 'Gerencia de Negocios y Crédito Agropecuario',
+        items: items,
+        plazoAnios: comparePlazoAnios,
+        periodicidad: comparePlazoAnios === 1.5 ? 'semestral' : (escenarioBancario.frecuencia || 'semestral'),
+        modalidadSemestral: compareEsquemaBancario,
+        tasaAnual: compareTasaBancaria,
+        gastoAdminUSD: escenarioBancario.gastoAdmin,
+        mayorCuotaAnio1USD: escenarioBancario.cuotaMayorAnio1,
+        totalPagadoUSD: escenarioBancario.totalPagado,
+        tipoFinanciacion: 'BANCARIA'
+      };
+
+      const doc = await generarPDFCartaOferta(payload);
+      const safeCliente = clienteFinal.replace(/[^a-zA-Z0-9]/g, '_');
+      const filename = `Carta_Oferta_${compareBancoNombre.replace(/[^a-zA-Z0-9]/g, '_')}_${safeCliente}_${autoNum}.pdf`;
+
+      const blobUrl = doc.output('bloburl');
+      try {
+        window.open(blobUrl, '_blank');
+      } catch {
+        // Ignore popup blocker
+      }
+      doc.save(filename);
+
+      showToast(`¡Carta de Oferta Comercial para ${compareBancoNombre} emitida con éxito!`);
+    } catch (err) {
+      console.error('Error generando Carta de Oferta del Banco:', err);
+      showToast('Error al generar la Carta de Oferta Comercial para el banco');
+    } finally {
+      setIsGeneratingOffer(false);
     }
   };
 
@@ -1111,14 +1222,19 @@ export const Calculator: React.FC<CalculatorProps> = ({
       doc.save(filename);
 
       // 2. Save to Supabase with await and visible error handling
-      const { error: insertError } = await supabase
+      const { data: insertedData, error: insertError } = await supabase
         .from('simulaciones_pdf')
-        .insert([cleanPayload]);
+        .insert([cleanPayload])
+        .select()
+        .single();
 
       if (insertError) {
         console.error('Error al guardar simulación en Supabase:', insertError);
         showToast('Atención: La simulación se generó en PDF pero hubo un error al sincronizar con el historial');
       } else {
+        if (insertedData?.id) {
+          setCurrentSimulationId(insertedData.id);
+        }
         console.log('Simulación guardada con éxito en Supabase');
         showToast('¡Simulación calculada, PDF generado y guardado en el historial con éxito!');
       }
@@ -2393,6 +2509,26 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
             {/* Botones en el Pie del Modal */}
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-end gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleEmitirCartaOfertaBanco}
+                disabled={isGeneratingOffer}
+                className="w-full sm:w-auto py-2.5 px-5 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-2 transition-all border border-slate-700 disabled:opacity-50"
+                title={`Emitir Carta de Oferta Comercial oficial a nombre de ${compareBancoNombre}`}
+              >
+                {isGeneratingOffer ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                    <span>Generando Carta Oferta...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileSignature className="w-4 h-4 text-amber-400" />
+                    <span>📝 Emitir Carta Oferta ({compareBancoNombre})</span>
+                  </>
+                )}
+              </button>
+
               <button
                 type="button"
                 onClick={handleDescargarPDFComparativo}

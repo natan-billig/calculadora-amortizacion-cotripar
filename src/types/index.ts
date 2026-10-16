@@ -1,4 +1,4 @@
-export const APP_VERSION = 'V.3.1';
+export const APP_VERSION = 'V.3.2';
 
 export interface ConfigFinanciacionCotripar {
   id: number;
@@ -215,5 +215,6 @@ export interface SimulacionPDF {
   fecha_ultima_cuota?: string;
   cantidad_cuotas?: number;
   comparativo_json?: any;
+  parent_id?: string | null;
 }
 

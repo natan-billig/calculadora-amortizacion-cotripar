@@ -268,7 +268,9 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.text('ENTIDAD FINANCIERA:', cRightX, currentY + 6);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  const entidadTxt = isCotripar ? 'Financiación Cotripar' : (data.bancoEntidad || 'Banco Comercial');
+  const entidadTxt = (data.bancoEntidad && !data.bancoEntidad.toUpperCase().includes('COTRIPAR'))
+    ? data.bancoEntidad
+    : 'Banco Comercial (Oficial)';
   doc.text(entidadTxt, cRightValX, currentY + 6);
 
   doc.setFont('helvetica', 'normal');
@@ -276,10 +278,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.text('MODALIDAD CRÉDITO:', cRightX, currentY + 11.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  const modTxt = isCotripar
-    ? 'Financiación Cotripar'
-    : 'Financiación Bancaria (SAC)';
-  doc.text(modTxt, cRightValX, currentY + 11.5);
+  doc.text('Financiación Bancaria (SAC)', cRightValX, currentY + 11.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
@@ -465,7 +464,7 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setFontSize(7.2);
   doc.setTextColor(200, 16, 46);
   doc.text(
-    isCotripar ? 'Condiciones de Financiación Cotripar' : 'Condiciones de Financiación Bancaria (Ref.)',
+    'Condiciones de Financiación Bancaria (Ref.)',
     boxAX + 3.5,
     currentY + 4.5
   );
@@ -473,28 +472,20 @@ export async function generarPDFCartaOferta(data: CartaOfertaPayload): Promise<j
   doc.setFontSize(6.2);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  const freqTexto = isCotripar
-    ? (data.periodicidad === 'semestral_zafra' || data.periodicidad === 'semestral'
-        ? 'Semestral / Zafra'
-        : (data.periodicidad === 'pago_unico' ? 'Pago Único' : 'Mensual'))
-    : (data.periodicidad === 'semestral'
-        ? (data.modalidadSemestral === 'zafra_interes_primero' ? 'Semestral (Zafra)' : 'Semestral (Constante)')
-        : 'Anual Estándar');
+  const freqTexto = data.periodicidad === 'semestral'
+    ? (data.modalidadSemestral === 'zafra_interes_primero' ? 'Semestral (Zafra)' : 'Semestral (Constante)')
+    : 'Anual Estándar';
 
-  const cantCuotas = data.cantidadCuotas || (data.fechasCuotas ? data.fechasCuotas.length : 1);
-  const finLines = isCotripar
-    ? [
-        `• Entidad Financiera: Financiación Cotripar`,
-        `• Capital a Financiar: ${formatUSD(totalAFinanciar)}${anticipo > 0 ? ' (Neto de Anticipo)' : ''}`,
-        `• Plazo y Periodicidad: ${data.plazoMeses || 18} Meses (${cantCuotas} ${cantCuotas === 1 ? 'cuota programada' : 'cuotas programadas'} - ${freqTexto})`,
-        `• Cuota Referencial: ${formatUSD(data.mayorCuotaAnio1USD)} (Última cuota: ${data.fechaUltimaCuota || data.fechaTopeVencimiento || '20/03/2028'})`
-      ]
-    : [
-        `• Entidad Financiera: ${data.bancoEntidad || 'Banco Comercial'}`,
-        `• Capital a Financiar: ${formatUSD(totalAFinanciar)}${anticipo > 0 ? ' (Neto de Anticipo)' : ''}`,
-        `• Plazo y Periodicidad: ${Math.abs(Number(data.plazoAnios) - 1.5) < 0.05 ? '18 Meses' : `${data.plazoAnios} ${Number(data.plazoAnios) === 1 ? 'Año' : 'Años'}`} (${freqTexto})`,
-        `• Cuota Referencial (Año 1): ${formatUSD(data.mayorCuotaAnio1USD)}`
-      ];
+  const bancoFinal = (data.bancoEntidad && !data.bancoEntidad.toUpperCase().includes('COTRIPAR'))
+    ? data.bancoEntidad
+    : 'Banco Comercial (Oficial)';
+
+  const finLines = [
+    `• Entidad Financiera: ${bancoFinal}`,
+    `• Capital a Financiar: ${formatUSD(totalAFinanciar)}${anticipo > 0 ? ' (Neto de Anticipo)' : ''}`,
+    `• Plazo y Periodicidad: ${Math.abs(Number(data.plazoAnios) - 1.5) < 0.05 ? '18 Meses' : `${data.plazoAnios} ${Number(data.plazoAnios) === 1 ? 'Año' : 'Años'}`} (${freqTexto})`,
+    `• Cuota Referencial (Año 1): ${formatUSD(data.mayorCuotaAnio1USD)}`
+  ];
   finLines.forEach((l, idx) => {
     doc.text(l, boxAX + 3.5, currentY + 8.8 + idx * 4.2);
   });
