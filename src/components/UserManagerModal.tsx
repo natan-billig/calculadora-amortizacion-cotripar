@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { AppUser, UserRole } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Users, UserPlus, Shield, User, Key, Check, RefreshCw, Pencil, X, AlertCircle } from 'lucide-react';
+import { Users, UserPlus, Shield, User, Key, Check, RefreshCw, Pencil, X, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 interface UserManagerModalProps {
   showToast: (msg: string) => void;
@@ -24,6 +24,7 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
   const [nombre, setNombre] = useState<string>('');
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
+  const [showUserPassword, setShowUserPassword] = useState<boolean>(false);
   const [rol, setRol] = useState<UserRole>('vendedor');
   const [activo, setActivo] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -58,6 +59,7 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
     setNombre(user.nombre);
     setUsername(user.username);
     setPassword(''); // NEVER populate password! Starts empty!
+    setShowUserPassword(false);
     setRol(user.rol);
     setActivo(user.activo);
   };
@@ -67,6 +69,7 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
     setNombre('');
     setUsername('');
     setPassword('');
+    setShowUserPassword(false);
     setRol('vendedor');
     setActivo(true);
   };
@@ -273,13 +276,22 @@ export const UserManagerModal: React.FC<UserManagerModalProps> = ({ showToast })
                   <div className="relative">
                     <Key className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
                     <input
-                      type="password"
+                      type={showUserPassword ? 'text' : 'password'}
                       required={!editingId}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={editingId ? 'Dejar en blanco para mantener la contraseña actual' : '••••••••'}
-                      className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
+                      className="w-full pl-9 pr-10 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-cotripar-700 focus:outline-none"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowUserPassword(!showUserPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors"
+                      tabIndex={-1}
+                      aria-label={showUserPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                    >
+                      {showUserPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
                   {editingId && (
                     <p className="text-[10px] text-slate-400 mt-1">
